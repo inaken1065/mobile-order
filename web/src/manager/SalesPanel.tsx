@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DailySales } from '../../../contracts/types';
 import { api } from '../shared/api';
+import { managerErrorText } from '../shared/error-text';
 import { shiftDate, todayJst, yen } from './format';
 
 export default function SalesPanel() {
@@ -16,7 +17,7 @@ export default function SalesPanel() {
       setError('');
     } catch (e) {
       setSales(null);
-      setError(`売上を取得できませんでした: ${e instanceof Error ? e.message : e}`);
+      setError(`売上を取得できませんでした: ${managerErrorText(e)}`);
     } finally {
       setLoading(false);
     }
