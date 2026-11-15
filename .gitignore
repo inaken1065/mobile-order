@@ -1,3 +1,27 @@
-node_modules
-data
-web/dist
+# dependencies / build output
+node_modules/
+web/dist/
+*.tsbuildinfo
+
+# SQLite DB files (dev data and per-Bolt test DBs; WAL/SHM side files included)
+/data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+
+# secrets / local config
+.env
+.env.*
+!.env.example
+
+# logs / OS / editor
+*.log
+npm-debug.log*
+.DS_Store
+.idea/
+.vscode/
