@@ -7,25 +7,13 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import { ORDER_STATUSES, type OrderStatus } from '../../../contracts/types';
 import { listOrders } from '../db/queries';
-import { InvalidTransitionError, OrderNotFoundError, transitionOrder } from '../db/transition';
+import { transitionOrder } from '../db/transition';
 
 function isOrderStatus(v: unknown): v is OrderStatus {
   return typeof v === 'string' && (ORDER_STATUSES as readonly string[]).includes(v);
 }
 
 export const kitchenRoutes: FastifyPluginAsync<{ db: DatabaseSync }> = async (app, { db }) => {
-  // このプラグイン内のルートのエラーを { error: メッセージ } に揃える
-  // (壊れた JSON など Fastify 自身が返すエラーも含む)。app.ts は触らず、スコープ内だけで設定する。
-  app.setErrorHandler((err: unknown, req, reply) => {
-    const e = err as { statusCode?: number; message?: string };
-    const code = e.statusCode && e.statusCode >= 400 ? e.statusCode : 500;
-    if (code >= 500) {
-      req.log.error(err);
-      return reply.code(500).send({ error: 'internal server error' });
-    }
-    return reply.code(code).send({ error: e.message ?? 'bad request' });
-  });
-
   app.get<{ Querystring: { status?: string } }>('/kitchen/orders', async (req, reply) => {
     const status = req.query.status;
     if (status !== undefined && !isOrderStatus(status)) {
@@ -44,15 +32,8 @@ export const kitchenRoutes: FastifyPluginAsync<{ db: DatabaseSync }> = async (ap
       const id = Number(req.params.id);
       if (!Number.isInteger(id)) return reply.code(404).send({ error: 'order not found' });
 
-      try {
-        return transitionOrder(db, id, status);
-      } catch (e) {
-        if (e instanceof OrderNotFoundError) return reply.code(404).send({ error: 'order not found' });
-        if (e instanceof InvalidTransitionError) {
-          return reply.code(409).send({ error: `invalid transition: ${e.from} -> ${e.to}` });
-        }
-        throw e;
-      }
+      // OrderNotFoundError(404)・InvalidTransitionError(409)は app.ts の全体ハンドラが変換する。
+      return transitionOrder(db, id, status);
     },
   );
 };

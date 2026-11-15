@@ -1,4 +1,6 @@
-// U0: 型付き fetch。Vite のプロキシ経由で API(/api → API サーバー)を呼ぶ。Wave 1 中は読み取り専用。
+// 型付き fetch。Vite のプロキシ経由で API(/api → API サーバー)を呼ぶ。失敗した応答は ApiError として投げる。
+import { ApiError } from '../../../contracts/api-error';
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
@@ -6,8 +8,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(`${method} ${path} -> ${res.status} ${(detail as { error?: string }).error ?? ''}`.trim());
+    const payload = await res.json().catch(() => ({}));
+    const detail = (payload as { error?: string }).error ?? '';
+    throw new ApiError(res.status, `${method} ${path} -> ${res.status} ${detail}`.trim(), detail);
   }
   return (await res.json()) as T;
 }

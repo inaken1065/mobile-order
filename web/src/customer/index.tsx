@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { MenuItem, Order, OrderStatus } from '../../../contracts/types';
 import { api } from '../shared/api';
+import { parseCustomerError } from '../shared/error-text';
 import { CSS } from './styles';
 
 const STORAGE_KEY = 'mobile-order:last-order-id';
@@ -34,13 +35,6 @@ function storeOrderId(id: number | null) {
   }
 }
 
-/** api.ts のエラー("POST /orders -> 409 sold out: ...")から status とメッセージを取り出す。 */
-function parseApiError(e: unknown): { status: number | null; message: string } {
-  const text = e instanceof Error ? e.message : String(e);
-  const m = text.match(/-> (\d{3}) ?(.*)$/);
-  return m ? { status: Number(m[1]), message: m[2] || text } : { status: null, message: text };
-}
-
 export default function Customer() {
   const [order, setOrder] = useState<Order | null>(null);
   const [restoring, setRestoring] = useState(true);
@@ -52,7 +46,7 @@ export default function Customer() {
     api.get<Order>(`/orders/${id}`).then(
       (o) => (setOrder(o), setRestoring(false)),
       (e) => {
-        if (parseApiError(e).status === 404) storeOrderId(null);
+        if (parseCustomerError(e).status === 404) storeOrderId(null);
         setRestoring(false);
       },
     );
@@ -95,7 +89,7 @@ function Ordering({ onPlaced }: { onPlaced: (o: Order) => void }) {
       setCart((c) => Object.fromEntries(Object.entries(c).filter(([id]) => !soldOut.has(Number(id)))));
       return r.items;
     } catch (e) {
-      setLoadError(parseApiError(e).message);
+      setLoadError(parseCustomerError(e).message);
       return null;
     }
   }, []);
@@ -138,7 +132,7 @@ function Ordering({ onPlaced }: { onPlaced: (o: Order) => void }) {
       });
       onPlaced(o);
     } catch (e) {
-      const { status, message: m } = parseApiError(e);
+      const { status, message: m } = parseCustomerError(e);
       if (status === 409) {
         await loadMenu(); // 最新の売り切れ状態を取り直し、カートから外す
         setMessage(`売り切れの商品がありました(${m.replace(/^sold out: /, '')})。カートを確認してください。`);

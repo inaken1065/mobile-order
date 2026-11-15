@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
     "test:contracts": "node --import tsx --test \"contracts/test/*.test.ts\"",
     "test:units": "node --import tsx --test \"server/test/*/*.test.ts\"",
-    "test": "npm run test:contracts && npm run test:units",
+    "test:web": "node --import tsx --test \"web/test/*.test.ts\"",
+    "test": "npm run test:contracts && npm run test:units && npm run test:web",
     "mutation:check": "tsx scripts/mutation-check.ts"
   },
   "dependencies": {

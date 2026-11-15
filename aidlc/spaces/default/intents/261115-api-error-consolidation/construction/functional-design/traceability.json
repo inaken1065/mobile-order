@@ -1,0 +1,43 @@
+{
+  "stage": "functional-design",
+  "upstream_ids": [
+    "FR1.1",
+    "FR1.2",
+    "FR1.3",
+    "FR1.4",
+    "FR1.5",
+    "FR1.6",
+    "FR2.1",
+    "FR2.2",
+    "FR2.3",
+    "FR2.4",
+    "FR3.1",
+    "FR3.2",
+    "FR3.3",
+    "FR3.4"
+  ],
+  "coverage": [
+    { "id": "FR1.1", "status": "OK", "target": "BR1.1" },
+    { "id": "FR1.2", "status": "OK", "target": "BR1.3" },
+    { "id": "FR1.3", "status": "OK", "target": "BR1.2" },
+    { "id": "FR1.4", "status": "OK", "target": "BR3.1" },
+    { "id": "FR1.5", "status": "OK", "target": "BR3.2" },
+    { "id": "FR1.6", "status": "OK", "target": "BR1.4" },
+    { "id": "FR2.1", "status": "OK", "target": "BR2.5" },
+    { "id": "FR2.2", "status": "OK", "target": "BR2.5" },
+    { "id": "FR2.3", "status": "OK", "target": "BR2.1" },
+    { "id": "FR2.4", "status": "OK", "target": "BR2.4" },
+    { "id": "FR3.1", "status": "OK", "target": "BR4.1" },
+    { "id": "FR3.2", "status": "OK", "target": "BR4.2" },
+    { "id": "FR3.3", "status": "OK", "target": "BR4.3" },
+    { "id": "FR3.4", "status": "OK", "target": "BR4.4" }
+  ],
+  "reverse": [
+    { "id": "BR2.2", "status": "N/A", "target": "FR2.3 の 4xx の扱いを分けた規則(質問 Q2 の回答)" },
+    { "id": "BR2.3", "status": "N/A", "target": "FR2.3 の 4xx 以外の扱いを分けた規則" },
+    { "id": "BR2.6", "status": "N/A", "target": "NFR1: 存在しないルートの 404 を変えない" },
+    { "id": "BR2.7", "status": "N/A", "target": "Functional Design のレビュー指摘 R-01 を、利用者が意図した変更として受け入れたもの" },
+    { "id": "BR4.5", "status": "N/A", "target": "FR3.2 のテストを npm test と npm run typecheck で動かす方法(NFR2、NFR3、レビュー指摘 R-02)" },
+    { "id": "BR4.6", "status": "N/A", "target": "BR2.7 の受け入れた動作変更を固定するテスト(レビュー指摘 R-01)" }
+  ]
+}

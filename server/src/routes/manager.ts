@@ -1,6 +1,6 @@
 // UC(店長)のルート: メニュー管理・売り切れ設定・日次売上。
 // 書き込みは menu_items のみ。orders / order_lines は SELECT のみ(書き込み担当表: aidlc-docs/inception/02-units.md)。
-// エラー形式は { error: string }。Fastify 自身のエラー(壊れた JSON など)もこの形に揃える(プラグインスコープ)。
+// エラー形式は { error: string }。Fastify 自身のエラー(壊れた JSON など)も、app.ts の全体ハンドラでこの形に揃う。
 import type { FastifyPluginAsync } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import type { DailySales, MenuItem } from '../../../contracts/types';
@@ -57,17 +57,6 @@ function isValidDate(date: string): boolean {
 }
 
 export const managerRoutes: FastifyPluginAsync<{ db: DatabaseSync }> = async (app, { db }) => {
-  // このプラグイン(/manager/*)のエラーを { error } 形式にする。500 は詳細を返さない。
-  app.setErrorHandler((error, _req, reply) => {
-    const err = error as { statusCode?: number; message: string };
-    const status = typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
-    if (status === 500) {
-      app.log.error(error);
-      return reply.code(500).send({ error: 'internal server error' });
-    }
-    return reply.code(status).send({ error: err.message });
-  });
-
   const findItem = (id: number): MenuItem | undefined => {
     const row = db
       .prepare('SELECT id, name, category, price, is_available FROM menu_items WHERE id = ?')

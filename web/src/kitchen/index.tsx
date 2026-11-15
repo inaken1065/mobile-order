@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ORDER_TRANSITIONS, type Order, type OrderStatus } from '../../../contracts/types';
 import { api } from '../shared/api';
+import { kitchenErrorText } from '../shared/error-text';
 
 const POLL_MS = 2000;
 const WARN_MIN = 10; // 経過がこの分数を超えた未完成の注文を強調
@@ -108,7 +109,7 @@ export default function Kitchen() {
       setOrders(r.orders);
       setError('');
     } catch (e) {
-      setError(`注文を取得できません: ${String(e)}`);
+      setError(`注文を取得できません: ${kitchenErrorText(e)}`);
     } finally {
       setLoaded(true);
     }
@@ -131,7 +132,7 @@ export default function Kitchen() {
       await api.patch<Order>(`/kitchen/orders/${order.id}/status`, { status: to });
     } catch (e) {
       // 409(他の端末で先に更新された等)も含め、最新の状態を取り直して表示する
-      failure = `#${order.call_number} を更新できませんでした: ${String(e)}`;
+      failure = `#${order.call_number} を更新できませんでした: ${kitchenErrorText(e)}`;
     }
     await load(); // 成功時はここでエラー表示も消える
     if (failure) setError(failure);

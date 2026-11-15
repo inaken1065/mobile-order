@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { MenuItem } from '../../../contracts/types';
 import { api } from '../shared/api';
+import { managerErrorText } from '../shared/error-text';
 import { yen } from './format';
 
 interface FormValues {
@@ -88,7 +89,7 @@ export default function MenuPanel() {
       setItems(r.items);
       setError('');
     } catch (e) {
-      setError(`メニューを取得できませんでした: ${e instanceof Error ? e.message : e}`);
+      setError(`メニューを取得できませんでした: ${managerErrorText(e)}`);
     } finally {
       setLoaded(true);
     }
@@ -115,7 +116,7 @@ export default function MenuPanel() {
       await load();
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(managerErrorText(e));
       return false;
     } finally {
       setBusy(false);
