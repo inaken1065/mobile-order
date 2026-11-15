@@ -1,48 +1,99 @@
-// UA(客)のルート。現状は B0 のウォーキングスケルトン用スタブ。B1 が本実装に置き換える。
-// スタブの省略事項: 売り切れ判定、詳細なバリデーション、呼出番号の日次リセット。
+// UA(客)のルート: メニュー閲覧・注文作成・注文照会。
+// 書き込み: orders は INSERT のみ(status は PLACED 固定)、order_lines は INSERT のみ。menu_items には書き込まない。
+// 売り切れ判定と INSERT は同一トランザクション(BEGIN IMMEDIATE)で行い、判定後に売り切れへ変わる競合を防ぐ。
 import type { FastifyPluginAsync } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
-import type { CreateOrderRequest } from '../../../contracts/types';
 import { tx } from '../db/db';
 import { getOrder, listMenuItems } from '../db/queries';
 import { nowJst } from '../db/time';
 
+class HttpError extends Error {
+  constructor(
+    public statusCode: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+interface LineInput {
+  menu_item_id: number;
+  qty: number;
+}
+
+/** リクエストボディの検証。不正なら 400。 */
+function parseLines(body: unknown): LineInput[] {
+  const lines = (body as { lines?: unknown } | null | undefined)?.lines;
+  if (!Array.isArray(lines) || lines.length === 0) {
+    throw new HttpError(400, 'lines must be a non-empty array');
+  }
+  return lines.map((line, i) => {
+    if (typeof line !== 'object' || line === null) throw new HttpError(400, `lines[${i}] must be an object`);
+    const { menu_item_id, qty } = line as Record<string, unknown>;
+    if (!Number.isInteger(menu_item_id)) throw new HttpError(400, `lines[${i}].menu_item_id must be an integer`);
+    if (!Number.isInteger(qty) || (qty as number) < 1) throw new HttpError(400, `lines[${i}].qty must be an integer >= 1`);
+    return { menu_item_id: menu_item_id as number, qty: qty as number };
+  });
+}
+
 export const customerRoutes: FastifyPluginAsync<{ db: DatabaseSync }> = async (app, { db }) => {
+  // このプラグイン(客のルート)内のエラーを { error: メッセージ } に揃える。
+  // プラグインスコープなので他ユニットのルートには影響しない。
+  app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
+    const status = typeof err.statusCode === 'number' && err.statusCode >= 400 ? err.statusCode : 500;
+    if (status >= 500) app.log.error(err);
+    return reply.code(status).send({ error: status >= 500 ? 'internal server error' : err.message });
+  });
+
+  // C1: メニュー一覧(売り切れも is_available: false で返す)
   app.get('/menu', async () => ({ items: listMenuItems(db) }));
 
-  app.post<{ Body: CreateOrderRequest }>('/orders', async (req, reply) => {
-    const lines = req.body?.lines;
-    if (!Array.isArray(lines) || lines.length === 0) {
-      return reply.code(400).send({ error: 'lines is required' });
-    }
-    const resolved: { id: number; name: string; price: number; qty: number }[] = [];
-    for (const l of lines) {
-      if (!Number.isInteger(l.qty) || l.qty <= 0) return reply.code(400).send({ error: 'invalid qty' });
-      const item = db.prepare('SELECT id, name, price FROM menu_items WHERE id = ?').get(l.menu_item_id) as
-        | { id: number; name: string; price: number }
-        | undefined;
-      if (!item) return reply.code(400).send({ error: `unknown menu_item_id: ${l.menu_item_id}` });
-      resolved.push({ ...item, qty: l.qty });
-    }
-    const total = resolved.reduce((s, r) => s + r.price * r.qty, 0);
+  // C2: 注文作成
+  app.post('/orders', async (req, reply) => {
+    const requested = parseLines(req.body);
+
+    // 同じ商品の複数行は1行にまとめる
+    const merged = new Map<number, number>();
+    for (const l of requested) merged.set(l.menu_item_id, (merged.get(l.menu_item_id) ?? 0) + l.qty);
 
     const orderId = tx(db, () => {
-      const next = db.prepare('SELECT COALESCE(MAX(call_number), 0) + 1 AS n FROM orders').get() as { n: number };
+      const select = db.prepare('SELECT id, name, price, is_available FROM menu_items WHERE id = ?');
+      const resolved = [...merged].map(([id, qty]) => {
+        const item = select.get(id) as { id: number; name: string; price: number; is_available: number } | undefined;
+        if (!item) throw new HttpError(400, `unknown menu_item_id: ${id}`);
+        return { ...item, qty };
+      });
+
+      const soldOut = resolved.filter((r) => r.is_available !== 1).map((r) => r.name);
+      if (soldOut.length > 0) throw new HttpError(409, `sold out: ${soldOut.join(', ')}`);
+
+      const total = resolved.reduce((sum, r) => sum + r.price * r.qty, 0);
+      const createdAt = nowJst();
+      // 呼出番号は日次リセット(当日 JST の最大値 + 1)。
+      const next = db
+        .prepare('SELECT COALESCE(MAX(call_number), 0) + 1 AS n FROM orders WHERE substr(created_at, 1, 10) = ?')
+        .get(createdAt.slice(0, 10)) as { n: number };
+
       const res = db
         .prepare('INSERT INTO orders (call_number, status, total, created_at) VALUES (?, ?, ?, ?)')
-        .run(next.n, 'PLACED', total, nowJst());
+        .run(next.n, 'PLACED', total, createdAt);
       const id = Number(res.lastInsertRowid);
+
       const insLine = db.prepare(
         'INSERT INTO order_lines (order_id, menu_item_id, name, unit_price, qty) VALUES (?, ?, ?, ?, ?)',
       );
-      for (const r of resolved) insLine.run(id, r.id, r.name, r.price, r.qty);
+      for (const r of resolved) insLine.run(id, r.id, r.name, r.price, r.qty); // 注文時点のスナップショット
       return id;
     });
+
     return reply.code(201).send(getOrder(db, orderId));
   });
 
-  app.get<{ Params: { id: string } }>('/orders/:id', async (req, reply) => {
-    const order = getOrder(db, Number(req.params.id));
-    return order ?? reply.code(404).send({ error: 'order not found' });
+  // C3: 注文照会(ステータスのポーリング先)
+  app.get<{ Params: { id: string } }>('/orders/:id', async (req) => {
+    const id = Number(req.params.id);
+    const order = Number.isInteger(id) ? getOrder(db, id) : undefined;
+    if (!order) throw new HttpError(404, 'order not found');
+    return order;
   });
 };
