@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import {
   ALLOWED_WRITES,
+  API_READ_DEPENDENCIES,
   FORBIDDEN_EVERYWHERE,
   ORDERS_UPDATE_ONLY_IN,
   TRANSITION_USERS,
@@ -218,4 +219,42 @@ test('0 (補助): ORDER_STATUSES 型と遷移表が自己整合している', ()
     assert.ok(s in ORDER_TRANSITIONS);
     for (const t of ORDER_TRANSITIONS[s as OrderStatus]) assert.ok(ORDER_STATUSES.includes(t));
   }
+});
+
+// ---------------------------------------------------------------- (d) API の読み取り依存
+
+test('0d: ownership.ts の API 読み取り依存と OpenAPI の x-read-by が一致する(双方向)', () => {
+  const api = loadOpenApi();
+  assert.ok(API_READ_DEPENDENCIES.length >= 1);
+
+  // ownership.ts → OpenAPI
+  for (const dep of API_READ_DEPENDENCIES) {
+    const op = api.paths[dep.path]?.[dep.method.toLowerCase()];
+    assert.ok(op, `${dep.method} ${dep.path} が OpenAPI に無い`);
+    assert.equal(op['x-owner'], dep.owner, `${dep.path} の x-owner`);
+    assert.ok((op['x-read-by'] ?? []).includes(dep.consumer), `${dep.path} の x-read-by に ${dep.consumer} が無い`);
+    assert.notEqual(dep.consumer, dep.owner);
+  }
+
+  // OpenAPI → ownership.ts(宣言漏れの検出)
+  for (const [path, item] of Object.entries<any>(api.paths)) {
+    for (const [method, op] of Object.entries<any>(item)) {
+      for (const consumer of op['x-read-by'] ?? []) {
+        assert.ok(
+          API_READ_DEPENDENCIES.some((d) => d.path === path && d.method === method.toUpperCase() && d.consumer === consumer),
+          `${method.toUpperCase()} ${path} の x-read-by(${consumer})が ownership.ts に無い`,
+        );
+      }
+    }
+  }
+});
+
+test('0d: 読み取り依存の保証(GET /menu は売り切れを含む全件)が守られている', async () => {
+  const { db, app } = freshApp();
+  const total = (db.prepare('SELECT COUNT(*) AS n FROM menu_items').get() as { n: number }).n;
+  const unavailable = (db.prepare('SELECT COUNT(*) AS n FROM menu_items WHERE is_available = 0').get() as { n: number }).n;
+  assert.ok(unavailable > 0, 'シードに売り切れ商品がある');
+  const items = ((await app.inject({ method: 'GET', url: '/menu' })).json() as { items: { is_available: boolean }[] }).items;
+  assert.equal(items.length, total, 'GET /menu は全件を返す');
+  assert.equal(items.filter((i) => !i.is_available).length, unavailable, '売り切れも含める');
 });

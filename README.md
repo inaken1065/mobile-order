@@ -6,9 +6,9 @@
 - 厨房: 注文を受け取り、調理中 → 完成とステータスを進める
 - 店長: メニュー・価格・売り切れを管理し、売上を確認する
 
-現在は **B0(U0 Contracts + Walking Skeleton)完了**の状態。客画面のボタン → `POST /orders` → DB → 厨房画面の表示までが最小限で通る。UA(客)・UB(厨房)・UC(店長)の本実装は B1〜B3 で行う。
+現在は **B0〜B3 と B0.1(契約・共通ファイルの修正)が完了**した状態。客・厨房・店長の API と UI が揃っている。残りは B4(結合確認・E2E)。
 
-計画の詳細は `aidlc-docs/inception/`(`01-intent-and-stories.md` / `02-units.md` / `03-bolt-plan.md`)、B0 の結果は `aidlc-docs/construction/BOLT-REPORT-U0.md`。
+計画の詳細は `aidlc-docs/inception/`(`01-intent-and-stories.md` / `02-units.md` / `03-bolt-plan.md`)、各 Bolt の結果は `aidlc-docs/construction/BOLT-REPORT-*.md`。
 
 ## 前提
 
@@ -34,13 +34,13 @@ npm run dev:web      # Web を起動(ターミナル 2)
 | トップ(各画面へのリンク) | http://localhost:5173/ |
 | 客画面 | http://localhost:5173/customer |
 | 厨房画面 | http://localhost:5173/kitchen |
-| 店長画面 | http://localhost:5173/manager(B0 ではプレースホルダ) |
+| 店長画面 | http://localhost:5173/manager |
 | API(直接) | http://localhost:3000(例: http://localhost:3000/menu) |
 | API(Web 経由) | http://localhost:5173/api/...(例: http://localhost:5173/api/menu) |
 
 Web は `/api` を API サーバーへプロキシする(`/api/menu` → `GET /menu`)。
 
-動作確認の流れ: 客画面でメニューの「注文する」を押す → 呼出番号が表示される → 厨房画面(2秒ごとに更新)に `PLACED` の注文が現れる。
+動作確認の流れ: 客画面でメニューを選んで「注文を確定する」 → 呼出番号が表示される → 厨房画面(2秒ごとに更新)の「受付」に注文が現れる → 「調理開始」「完成」で進める(客画面のステータスも更新される) → 店長画面の「売上」に完成した注文が反映される。
 
 ### 環境変数
 
@@ -56,8 +56,10 @@ Bolt を並列実行するときは、Bolt ごとにこれらを変えて干渉�
 ## テスト
 
 ```bash
-npm run test:contracts   # 契約テスト 0〜3(25件)
-npm run mutation:check   # 契約テストが壊れた実装を検出できるかの確認(19変異)
+npm test                 # 契約テスト + ユニットテスト(下の2つをまとめて実行)
+npm run test:contracts   # 契約テスト 0〜3(27件)
+npm run test:units       # 各ユニットの受入テスト(server/test/<role>/、69件)
+npm run mutation:check   # 契約テストが壊れた実装を検出できるかの確認(22変異)
 npm run typecheck        # サーバー・契約・Web の型チェック
 npm run build:web        # Web のビルド(web/dist)
 ```
@@ -66,12 +68,12 @@ npm run build:web        # Web のビルド(web/dist)
 
 | テスト | 検証内容 |
 |--------|---------|
-| 0 | 書き込み担当表の強制(DB トリガー・ルートの静的検査・OpenAPI の `x-owner`) |
+| 0 | 書き込み担当表の強制(DB トリガー・ルートの静的検査・OpenAPI の `x-owner`)と、API 読み取り依存(`x-read-by`)の宣言漏れ検出 |
 | 1 | UA ↔ UC: `menu_items` の列定義と、メニュー変更の反映 |
 | 2 | UA → UB: `orders.status` の値と初期状態、厨房一覧の並び |
 | 3 | UB → UC: 売上は `READY` の注文だけを `completed_at` の日付で集計 |
 
-**Wave 1 の各 Bolt は、完了前にこれが全部緑であることを確認する。赤になったらテストではなく実装を直す。**
+**各 Bolt は、完了前にこれが全部緑であることを確認する。赤になったらテストではなく実装を直す。**
 
 ## ディレクトリ構成と編集してよい範囲
 
@@ -83,7 +85,7 @@ server/src/routes/
   customer.ts              UA: 客のルート
   kitchen.ts               UB: 厨房のルート
   manager.ts               UC: 店長のルート
-server/test/{customer,kitchen,manager}/   各ユニットの自前テスト(B1〜B3 で作成)
+server/test/{customer,kitchen,manager}/   各ユニットの受入テスト
 web/                       U0: Vite + React のシェル(main.tsx、shared/api.ts、設定)
 web/src/customer/          UA: Customer UI
 web/src/kitchen/           UB: Kitchen UI
@@ -95,13 +97,13 @@ aidlc-docs/                計画と Bolt 報告書
 
 | Bolt | 編集してよい場所 |
 |------|----------------|
-| B0(U0) | `contracts/`、`server/src/app.ts`、`server/src/db/`、`web/` のシェル、スケルトンのスタブ |
+| B0 / B0.1(U0) | `contracts/`、`server/src/app.ts`、`server/src/db/`、`web/` のシェル、`package.json`、`README.md`、`aidlc-docs/` |
 | B1(UA 客) | `server/src/routes/customer.ts`、`server/test/customer/`、`web/src/customer/` |
 | B2(UB 厨房) | `server/src/routes/kitchen.ts`、`server/test/kitchen/`、`web/src/kitchen/` |
 | B3(UC 店長) | `server/src/routes/manager.ts`、`server/test/manager/`、`web/src/manager/` |
 | B4(結合) | 各ユニットのバグ修正のみ(修正箇所と原因を記録)、`e2e/` |
 
-並列実行中(Wave 1)は、`contracts/`・`schema.sql`・`app.ts`・`web/` のシェルは**読み取り専用**。変更が必要になったら該当 Bolt を止めて B0 に差し戻す。
+並列実行中は、`contracts/`・`schema.sql`・`app.ts`・`web/` のシェルは**読み取り専用**。変更が必要になったら該当 Bolt を止めて B0(B0.1 のように別 Issue・別 PR)に差し戻す。
 
 ### DB の書き込み担当(要約)
 
@@ -113,19 +115,23 @@ aidlc-docs/                計画と Bolt 報告書
 
 UC は `orders` / `order_lines` に書き込まない(集計は SELECT のみ)。強制はトリガーと静的検査で行う。正本は `aidlc-docs/inception/02-units.md`。
 
+### API の読み取り依存
+
+**UC(Manager UI)は、メニュー一覧の取得に UA 所有の `GET /menu` を読み取りで使う**(店長用の一覧 API は持たない)。そのため `GET /menu` は**売り切れを含む全件**を返す契約で、UA は絞り込み・除外をしてはならない。この依存は `contracts/ownership.ts` の `API_READ_DEPENDENCIES` と OpenAPI の `x-read-by` に宣言され、契約テスト 0d・1c が守っている。保証を変えるときは B0 に差し戻す。
+
 ## API 規約
 
 エンドポイント一覧とスキーマの正本は `contracts/openapi.json`。
 
-| エンドポイント | 担当 | B0 の状態 |
-|---------------|------|----------|
-| `GET /menu` | UA | 実装済み(スタブ) |
-| `POST /orders` | UA | 実装済み(スタブ。売り切れ判定なし) |
-| `GET /orders/{id}` | UA | 実装済み |
-| `GET /kitchen/orders?status=` | UB | 実装済み |
-| `PATCH /kitchen/orders/{id}/status` | UB | 未実装(B2) |
-| `POST /manager/menu`、`PUT /manager/menu/{id}`、`PATCH /manager/menu/{id}/availability` | UC | 未実装(B3) |
-| `GET /manager/sales/daily?date=` | UC | 実装済み(スタブ) |
+| エンドポイント | 担当 | 備考 |
+|---------------|------|------|
+| `GET /menu` | UA | 売り切れを含む**全件**を返す(UC が読み取りで依存) |
+| `POST /orders` | UA | 売り切れ商品を含むと 409。重複行は合算 |
+| `GET /orders/{id}` | UA | |
+| `GET /kitchen/orders?status=` | UB | 古い順 |
+| `PATCH /kitchen/orders/{id}/status` | UB | 1段階ずつ進める。不正な遷移は 409 |
+| `POST /manager/menu`、`PUT /manager/menu/{id}`、`PATCH /manager/menu/{id}/availability` | UC | メニュー管理・売り切れ設定 |
+| `GET /manager/sales/daily?date=` | UC | `READY` の注文のみ集計 |
 
 - **形式**: リクエスト・レスポンスとも JSON(`content-type: application/json`)。認証はない(学習用)
 - **名前**: フィールドは snake_case で、DB の列名と同じ。例外として `is_available` は API では boolean(DB は 0/1)
@@ -138,10 +144,13 @@ UC は `orders` / `order_lines` に書き込まない(集計は SELECT のみ)�
   | ステータス | 意味 |
   |-----------|------|
   | 200 / 201 | 成功 / 作成成功 |
-  | 400 | 入力不正(必須項目なし、数量不正、未知の `menu_item_id`、不正な `status` / `date`) |
-  | 404 | 対象が存在しない |
-  | 409 | 状態が許さない(不正なステータス遷移、売り切れ商品の注文。後者は UA の本実装で追加) |
+  | 400 | 入力不正(必須項目なし、数量不正、未知の `menu_item_id`、メニュー入力の検証エラー、不正な `status` / `date`) |
+  | 404 | 対象が存在しない(`id` が整数でない場合も 404) |
+  | 409 | 状態が許さない(逆戻り・飛ばし・同一状態のステータス遷移、売り切れ商品の注文) |
+  | 5xx | `{ "error": "internal server error" }`(内部情報は返さない) |
 
-  Fastify 自身が返すエラー(壊れた JSON など)は `{ statusCode, code, error, message }` という別の形になる。必要なら B1〜B3 で統一する。
+  各ユニットのルート内で起きるエラー(壊れた JSON を含む)は、上の `{ "error": ... }` 形式に揃えている(ユニットごとのプラグイン内で設定)。**未定義のルートへのリクエスト(404)だけは Fastify 標準の形式**(`{ message, error, statusCode }`)のまま。全体への集約は backlog(Issue #12)。
 - **注文時点のスナップショット**: `order_lines` の `name` と `unit_price` は注文時点の値で、後でメニューを変更しても変わらない
-- **売上**: `READY` の注文だけを `completed_at` の日付で集計する
+- **売上**: `READY` の注文だけを `completed_at` の日付で集計する。数量・金額は注文時点のスナップショット単価で計算する
+- **呼出番号**: 当日(JST)内で 1 から採番(日次リセット)
+- **Wave 1 で確定した決定事項**の一覧は `aidlc-docs/inception/02-units.md`(「Wave 1 で確定した決定事項」)

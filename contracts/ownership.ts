@@ -38,3 +38,27 @@ export const ORDERS_UPDATE_ONLY_IN = 'db/transition.ts';
 
 /** transitionOrder を参照してよい場所(db/ と UB のルート) */
 export const TRANSITION_USERS = ['db/', UNIT_PATH_PREFIX.UB];
+
+/**
+ * ユニット間の API 読み取り依存。DB の書き込み担当(上記)とは別に、
+ * 「他ユニット所有のルートを読み取りで使う」関係を明示する。
+ * OpenAPI の x-read-by と契約テスト 0d で突き合わせる。
+ */
+export interface ApiReadDependency {
+  consumer: Unit;
+  owner: Unit;
+  method: 'GET';
+  path: string;
+  /** owner が守らなければならない振る舞い(consumer が依存している) */
+  guarantee: string;
+}
+
+export const API_READ_DEPENDENCIES: ApiReadDependency[] = [
+  {
+    consumer: 'UC',
+    owner: 'UA',
+    method: 'GET',
+    path: '/menu',
+    guarantee: '売り切れ(is_available=false)を含む全件を返す(契約テスト 1c)',
+  },
+];

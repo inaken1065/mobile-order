@@ -38,6 +38,9 @@ const MUTATIONS: Mutation[] = [
   { name: 'UB が生の UPDATE orders を書く', file: 'server/src/routes/kitchen.ts', append: '\nconst _bad = "UPDATE orders SET status = 1";\n', expectFailure: '0b' },
   { name: 'UC が transitionOrder を使う', file: 'server/src/routes/manager.ts', append: "\nimport { transitionOrder } from '../db/transition';\nvoid transitionOrder;\n", expectFailure: '0b' },
   { name: 'OpenAPI の x-owner が不一致', file: 'contracts/openapi.json', from: '"x-owner": "UB",\n        "summary": "注文一覧', to: '"x-owner": "UA",\n        "summary": "注文一覧', expectFailure: '0c' },
+  { name: 'OpenAPI から x-read-by を削除(読み取り依存の宣言漏れ)', file: 'contracts/openapi.json', from: '"x-read-by": ["UC"],\n', to: '', expectFailure: '0d' },
+  { name: 'OpenAPI に未宣言の x-read-by を追加', file: 'contracts/openapi.json', from: '"x-owner": "UB",\n        "summary": "注文一覧', to: '"x-owner": "UB",\n        "x-read-by": ["UC"],\n        "summary": "注文一覧', expectFailure: '0d' },
+  { name: 'GET /menu が売り切れを除外する(UC の依存を壊す)', file: 'server/src/db/queries.ts', from: "FROM menu_items ORDER BY category, id", to: "FROM menu_items WHERE is_available = 1 ORDER BY category, id", expectFailure: '0d' },
   { name: 'OpenAPI の OrderStatus に値を追加', file: 'contracts/openapi.json', from: '"enum": ["PLACED", "COOKING", "READY"]', to: '"enum": ["PLACED", "COOKING", "READY", "DONE"]', expectFailure: '2a' },
 ];
 
