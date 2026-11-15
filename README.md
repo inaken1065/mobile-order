@@ -56,9 +56,10 @@ Bolt を並列実行するときは、Bolt ごとにこれらを変えて干渉�
 ## テスト
 
 ```bash
-npm test                 # 契約テスト + ユニットテスト(下の2つをまとめて実行)
+npm test                 # 契約テスト + ユニットテスト + Web のテスト(下の3つをまとめて実行)
 npm run test:contracts   # 契約テスト 0〜3(27件)
-npm run test:units       # 各ユニットの受入テスト(server/test/<role>/、69件)
+npm run test:units       # サーバーのテスト(server/test/<role>/ の各ユニットの受入テストと、server/test/app/ の全体エラーハンドラのテスト、78件)
+npm run test:web         # Web のテスト(web/test/、エラーの受け取りと表示文言、13件)
 npm run mutation:check   # 契約テストが壊れた実装を検出できるかの確認(22変異)
 npm run typecheck        # サーバー・契約・Web の型チェック
 npm run build:web        # Web のビルド(web/dist)
@@ -78,15 +79,17 @@ npm run build:web        # Web のビルド(web/dist)
 ## ディレクトリ構成と編集してよい範囲
 
 ```
-contracts/                 U0: 型、OpenAPI、書き込み担当(ownership.ts)、契約テスト
-server/src/app.ts          U0: サーバー骨格(ルートの登録のみ)
+contracts/                 U0: 型、OpenAPI、書き込み担当(ownership.ts)、契約テスト、共通のエラー型(api-error.ts)
+server/src/app.ts          U0: サーバー骨格(全体のエラーハンドラとルートの登録)
 server/src/db/             U0: スキーマ(トリガー込み)、シード、共有クエリ、transitionOrder
 server/src/routes/
   customer.ts              UA: 客のルート
   kitchen.ts               UB: 厨房のルート
   manager.ts               UC: 店長のルート
 server/test/{customer,kitchen,manager}/   各ユニットの受入テスト
-web/                       U0: Vite + React のシェル(main.tsx、shared/api.ts、設定)
+server/test/app/           全体エラーハンドラのテスト
+web/                       U0: Vite + React のシェル(main.tsx、shared/api.ts、shared/error-text.ts、設定)
+web/test/                  Web のテスト(エラーの受け取りと表示文言)
 web/src/customer/          UA: Customer UI
 web/src/kitchen/           UB: Kitchen UI
 web/src/manager/           UC: Manager UI
@@ -149,7 +152,7 @@ UC は `orders` / `order_lines` に書き込まない(集計は SELECT のみ)�
   | 409 | 状態が許さない(逆戻り・飛ばし・同一状態のステータス遷移、売り切れ商品の注文) |
   | 5xx | `{ "error": "internal server error" }`(内部情報は返さない) |
 
-  各ユニットのルート内で起きるエラー(壊れた JSON を含む)は、上の `{ "error": ... }` 形式に揃えている(ユニットごとのプラグイン内で設定)。**未定義のルートへのリクエスト(404)だけは Fastify 標準の形式**(`{ message, error, statusCode }`)のまま。全体への集約は backlog(Issue #12)。
+  ルートで起きるエラー(壊れた JSON を含む)は、上の `{ "error": ... }` 形式に揃えている。`server/src/app.ts` の全体エラーハンドラ1つが、客・厨房・店長のすべてのルートに適用される。HTTP の失敗を表すエラー型は `contracts/api-error.ts` の `ApiError`(`status`、`message`、`detail`)で、サーバーが投げるときと、Web が失敗した応答から作るときの両方で使う。**存在しないルートへのリクエスト(404)だけは Fastify 標準の形式**(`{ message, error, statusCode }`)のまま。ただし、存在しないルートに壊れた JSON を送ったときの 400 は、`{ "error": ... }` の形になる。メッセージの無い 4xx は `"bad request"`、4xx 以外は 500 の `"internal server error"` になる。
 - **注文時点のスナップショット**: `order_lines` の `name` と `unit_price` は注文時点の値で、後でメニューを変更しても変わらない
 - **売上**: `READY` の注文だけを `completed_at` の日付で集計する。数量・金額は注文時点のスナップショット単価で計算する
 - **呼出番号**: 当日(JST)内で 1 から採番(日次リセット)
