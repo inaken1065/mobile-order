@@ -3,18 +3,10 @@
 // 売り切れ判定と INSERT は同一トランザクション(BEGIN IMMEDIATE)で行い、判定後に売り切れへ変わる競合を防ぐ。
 import type { FastifyPluginAsync } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
+import { ApiError } from '../../../contracts/api-error';
 import { tx } from '../db/db';
 import { getOrder, listMenuItems } from '../db/queries';
 import { nowJst } from '../db/time';
-
-class HttpError extends Error {
-  constructor(
-    public statusCode: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 interface LineInput {
   menu_item_id: number;
@@ -25,26 +17,18 @@ interface LineInput {
 function parseLines(body: unknown): LineInput[] {
   const lines = (body as { lines?: unknown } | null | undefined)?.lines;
   if (!Array.isArray(lines) || lines.length === 0) {
-    throw new HttpError(400, 'lines must be a non-empty array');
+    throw new ApiError(400, 'lines must be a non-empty array');
   }
   return lines.map((line, i) => {
-    if (typeof line !== 'object' || line === null) throw new HttpError(400, `lines[${i}] must be an object`);
+    if (typeof line !== 'object' || line === null) throw new ApiError(400, `lines[${i}] must be an object`);
     const { menu_item_id, qty } = line as Record<string, unknown>;
-    if (!Number.isInteger(menu_item_id)) throw new HttpError(400, `lines[${i}].menu_item_id must be an integer`);
-    if (!Number.isInteger(qty) || (qty as number) < 1) throw new HttpError(400, `lines[${i}].qty must be an integer >= 1`);
+    if (!Number.isInteger(menu_item_id)) throw new ApiError(400, `lines[${i}].menu_item_id must be an integer`);
+    if (!Number.isInteger(qty) || (qty as number) < 1) throw new ApiError(400, `lines[${i}].qty must be an integer >= 1`);
     return { menu_item_id: menu_item_id as number, qty: qty as number };
   });
 }
 
 export const customerRoutes: FastifyPluginAsync<{ db: DatabaseSync }> = async (app, { db }) => {
-  // このプラグイン(客のルート)内のエラーを { error: メッセージ } に揃える。
-  // プラグインスコープなので他ユニットのルートには影響しない。
-  app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
-    const status = typeof err.statusCode === 'number' && err.statusCode >= 400 ? err.statusCode : 500;
-    if (status >= 500) app.log.error(err);
-    return reply.code(status).send({ error: status >= 500 ? 'internal server error' : err.message });
-  });
-
   // C1: メニュー一覧(売り切れも is_available: false で返す)
   app.get('/menu', async () => ({ items: listMenuItems(db) }));
 
@@ -60,12 +44,12 @@ export const customerRoutes: FastifyPluginAsync<{ db: DatabaseSync }> = async (a
       const select = db.prepare('SELECT id, name, price, is_available FROM menu_items WHERE id = ?');
       const resolved = [...merged].map(([id, qty]) => {
         const item = select.get(id) as { id: number; name: string; price: number; is_available: number } | undefined;
-        if (!item) throw new HttpError(400, `unknown menu_item_id: ${id}`);
+        if (!item) throw new ApiError(400, `unknown menu_item_id: ${id}`);
         return { ...item, qty };
       });
 
       const soldOut = resolved.filter((r) => r.is_available !== 1).map((r) => r.name);
-      if (soldOut.length > 0) throw new HttpError(409, `sold out: ${soldOut.join(', ')}`);
+      if (soldOut.length > 0) throw new ApiError(409, `sold out: ${soldOut.join(', ')}`);
 
       const total = resolved.reduce((sum, r) => sum + r.price * r.qty, 0);
       const createdAt = nowJst();
@@ -93,7 +77,7 @@ export const customerRoutes: FastifyPluginAsync<{ db: DatabaseSync }> = async (a
   app.get<{ Params: { id: string } }>('/orders/:id', async (req) => {
     const id = Number(req.params.id);
     const order = Number.isInteger(id) ? getOrder(db, id) : undefined;
-    if (!order) throw new HttpError(404, 'order not found');
+    if (!order) throw new ApiError(404, 'order not found');
     return order;
   });
 };

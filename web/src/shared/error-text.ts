@@ -1,10 +1,11 @@
 // 画面で使うエラーの判定と文言の組み立て。描画(React)には依存しない純粋な関数だけを置く。
 
-/** 客画面: api.ts のエラー("POST /orders -> 409 sold out: ...")から status とメッセージを取り出す。 */
+import { ApiError } from '../../../contracts/api-error';
+
+/** 客画面: ApiError から status とメッセージ(detail、空なら message)を取り出す。 */
 export function parseCustomerError(e: unknown): { status: number | null; message: string } {
-  const text = e instanceof Error ? e.message : String(e);
-  const m = text.match(/-> (\d{3}) ?(.*)$/);
-  return m ? { status: Number(m[1]), message: m[2] || text } : { status: null, message: text };
+  if (e instanceof ApiError) return { status: e.status, message: e.detail || e.message };
+  return { status: null, message: e instanceof Error ? e.message : String(e) };
 }
 
 /** 厨房画面: 失敗の文言。 */
