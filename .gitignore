@@ -19,6 +19,15 @@ web/dist/
 .env.*
 !.env.example
 
+# Terraform(state・変数ファイル・plan はコミットしない。.terraform.lock.hcl はコミットする)
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+tfplan
+*.tfplan
+
 # logs / OS / editor
 *.log
 npm-debug.log*

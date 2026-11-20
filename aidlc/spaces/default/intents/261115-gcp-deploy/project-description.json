@@ -1,0 +1,1 @@
+"mobile-order を Google Cloud にデプロイしたい。方針: インフラは Terraform で管理（state は GCS バケット）。構成は Compute Engine の VM 1台、DB は SQLite のまま永続ディスクに保存。CI/CD は GitHub Actions、Google Cloud への認証は Workload Identity Federation（サービスアカウントキーは使わない）。学習用なのでコストは最小限。制約: アプリにログイン機能がないのでアクセスは私の IP アドレスからだけに制限する。terraform apply など課金が発生する操作は実行前に必ず私の承認を取る。作業ブランチ feature/gcp-deploy は作成済み。"
