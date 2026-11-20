@@ -25,23 +25,23 @@
 
 ## 計画の手順
 
-- [ ] Step 1: プロジェクトの骨格と本番の設定。`infra/terraform/`、`infra/terraform/files/`、`infra/test/`、`scripts/test/`、`.github/workflows/` を作る。`.gitignore` は変更しない(`*.tfvars` などは既に除外済み)。
-- [ ] Step 2: 既存のテストランナーの確認と、新しいテストのコマンドの記録。`package.json` の `test:*`(`node --import tsx --test`)に合わせ、新規テストのコマンドを `unit-test-instructions.md` のとおりに記録し、実行できることを確認する。
-- [ ] Step 3: データモデルとデータアクセス。該当なし(DB のスキーマとアプリのデータ層は変えない。DB は `/mnt/data/app.db` に置く設定だけ)。
-- [ ] Step 4: ビジネスロジック。該当なし(アプリのロジックは変えない)。
-- [ ] Step 5: API とエンドポイント層の実装: `server/src/index.ts` の `host` を `process.env.HOST ?? '0.0.0.0'` にする(1 行。`[Q]` NFR 要件のレビューで認めた唯一の例外)。
-- [ ] Step 6: API 層のテストを書いて実行: `server/test/app/host-binding.test.ts`(HOST 指定、未指定、不正な指定)。既存のテストは変更しない。
-- [ ] Step 7: Terraform の実装(Terraform のファイルの構成は `infrastructure-specification.md`):
-  - [ ] 7a: `versions.tf`、`backend.tf`(`backend "gcs" {}` のみ。バケット名は `-backend-config` で渡す)、`variables.tf`(`project_id`、`region`、`zone`、`allowed_ip_cidr`、`github_repository`、`owner_email`、`node_version`、`node_sha256`)、`terraform.tfvars.example`(プレースホルダーだけ)、`outputs.tf`
-  - [ ] 7b: `network.tf`(専用 VPC、サブネット、ファイアウォール 2 つ)
-  - [ ] 7c: `compute.tf`(データディスク `prevent_destroy`、VM、`metadata_startup_script` の `templatefile`、VM 用サービスアカウント)
-  - [ ] 7d: `iam.tf`(デプロイ用サービスアカウント、カスタムロール、所有者の権限、WIF のプールとプロバイダ、`google_project_service`)
-  - [ ] 7e: `.terraform.lock.hcl` を `terraform init -backend=false` で生成する(コミットする)
-- [ ] Step 8: VM 上のスクリプトと設定の実装: `startup.sh.tpl`、`files/mobile-order-deploy.sh`、`files/Caddyfile`、`files/mobile-order.service`、`files/caddy-order.conf`、`files/journald-mobile-order.conf`、`files/sysctl-mobile-order.conf`。`deploy.sh` は `cicd-pipeline.md` の設計どおり(入力の検査、root 所有の作業ディレクトリでの照合、`tar` の一覧の検査、切り替え、`free -m` の計測、スモークテスト、ロールバック、未マウントの例外)。パスは先頭の定数にまとめ、`MO_TEST_ROOT` による上書きは、root 以外のときだけ受け付ける(`sudo` では環境変数が引き継がれないが、二重に防ぐ)。
-- [ ] Step 9: Terraform とスクリプトのテストを書いて実行: `terraform fmt -check`、`terraform init -backend=false`、`terraform validate`、`infra/test/deploy-script.test.ts`(下の「テスト」)、`infra/test/shell-syntax.test.ts`(`bash -n`)。
-- [ ] Step 10: CI と CD の実装: `.github/workflows/ci.yml`、`.github/workflows/deploy.yml`、`.github/dependabot.yml`、`scripts/ci-guards.sh`(G7〜G10 を実装する。`ci.yml` の `secrets` ジョブが実行する)。`package.json` に `esbuild` を版を固定して `devDependencies` へ加え(`npm install --save-dev --save-exact esbuild`)、`build:server` と `test:infra` のスクリプトを追加し、`package-lock.json` を更新する。
-- [ ] Step 11: CI のガードのテストを書いて実行: `scripts/test/ci-guards.test.ts`。あわせて `deploy.yml` のビルドの手順(`npm run build:server` で `server.mjs` を作り、`node_modules` なしで起動して `GET /menu` が 200)を、この環境で実際に実行して確認する。
-- [ ] Step 12: ビルドと環境の設定: `ci-config.md` と `quality-gates.md` に、`test:infra` を `app` ジョブの手順として加える(G4 の追加)。設計文書の更新はこの 1 点だけ。
+- [x] Step 1: プロジェクトの骨格と本番の設定。`infra/terraform/`、`infra/terraform/files/`、`infra/test/`、`scripts/test/`、`.github/workflows/` を作る。`.gitignore` は変更しない(`*.tfvars` などは既に除外済み)。
+- [x] Step 2: 既存のテストランナーの確認と、新しいテストのコマンドの記録。`package.json` の `test:*`(`node --import tsx --test`)に合わせ、新規テストのコマンドを `unit-test-instructions.md` のとおりに記録し、実行できることを確認する。
+- [x] Step 3: データモデルとデータアクセス。該当なし(DB のスキーマとアプリのデータ層は変えない。DB は `/mnt/data/app.db` に置く設定だけ)。
+- [x] Step 4: ビジネスロジック。該当なし(アプリのロジックは変えない)。
+- [x] Step 5: API とエンドポイント層の実装: `server/src/index.ts` の `host` を `process.env.HOST ?? '0.0.0.0'` にする(1 行。`[Q]` NFR 要件のレビューで認めた唯一の例外)。
+- [x] Step 6: API 層のテストを書いて実行: `server/test/app/host-binding.test.ts`(HOST 指定、未指定、不正な指定)。既存のテストは変更しない。
+- [x] Step 7: Terraform の実装(Terraform のファイルの構成は `infrastructure-specification.md`):
+  - [x] 7a: `versions.tf`、`backend.tf`(`backend "gcs" {}` のみ。バケット名は `-backend-config` で渡す)、`variables.tf`(`project_id`、`region`、`zone`、`allowed_ip_cidr`、`github_repository`、`owner_email`、`node_version`、`node_sha256`)、`terraform.tfvars.example`(プレースホルダーだけ)、`outputs.tf`
+  - [x] 7b: `network.tf`(専用 VPC、サブネット、ファイアウォール 2 つ)
+  - [x] 7c: `compute.tf`(データディスク `prevent_destroy`、VM、`metadata_startup_script` の `templatefile`、VM 用サービスアカウント)
+  - [x] 7d: `iam.tf`(デプロイ用サービスアカウント、カスタムロール、所有者の権限、WIF のプールとプロバイダ、`google_project_service`)
+  - [x] 7e: `.terraform.lock.hcl` を `terraform init -backend=false` で生成する(コミットする)
+- [x] Step 8: VM 上のスクリプトと設定の実装: `startup.sh.tpl`、`files/mobile-order-deploy.sh`、`files/Caddyfile`、`files/mobile-order.service`、`files/caddy-order.conf`、`files/journald-mobile-order.conf`、`files/sysctl-mobile-order.conf`。`deploy.sh` は `cicd-pipeline.md` の設計どおり(入力の検査、root 所有の作業ディレクトリでの照合、`tar` の一覧の検査、切り替え、`free -m` の計測、スモークテスト、ロールバック、未マウントの例外)。パスは先頭の定数にまとめ、`MO_TEST_ROOT` による上書きは、root 以外のときだけ受け付ける(`sudo` では環境変数が引き継がれないが、二重に防ぐ)。
+- [x] Step 9: Terraform とスクリプトのテストを書いて実行: `terraform fmt -check`、`terraform init -backend=false`、`terraform validate`、`infra/test/deploy-script.test.ts`(下の「テスト」)、`infra/test/shell-syntax.test.ts`(`bash -n`)。
+- [x] Step 10: CI と CD の実装: `.github/workflows/ci.yml`、`.github/workflows/deploy.yml`、`.github/dependabot.yml`、`scripts/ci-guards.sh`(G7〜G10 を実装する。`ci.yml` の `secrets` ジョブが実行する)。`package.json` に `esbuild` を版を固定して `devDependencies` へ加え(`npm install --save-dev --save-exact esbuild`)、`build:server` と `test:infra` のスクリプトを追加し、`package-lock.json` を更新する。
+- [x] Step 11: CI のガードのテストを書いて実行: `scripts/test/ci-guards.test.ts`。あわせて `deploy.yml` のビルドの手順(`npm run build:server` で `server.mjs` を作り、`node_modules` なしで起動して `GET /menu` が 200)を、この環境で実際に実行して確認する。
+- [x] Step 12: ビルドと環境の設定: `ci-config.md` と `quality-gates.md` に、`test:infra` を `app` ジョブの手順として加える(G4 の追加)。設計文書の更新はこの 1 点だけ。
 - [ ] Step 13: ドキュメントと追跡: `code-summary.md`(作ったファイル、版を固定できなかったもの、実行しなかったもの、カバレッジの扱い)、`traceability.json`、`source-manifest.json` は書かない(ゼロ Unit)。
 
 ## 作るファイルとテスト

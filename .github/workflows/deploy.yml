@@ -1,0 +1,194 @@
+name: deploy
+
+# main へのマージで、アプリの成果物(server.mjs、schema.sql、web/)だけを VM に送る。
+# インフラ(Terraform)は、このワークフローでは変更しない(人間の承認のあとの手動の実行)。
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "aidlc/**"
+      - "aidlc-docs/**"
+      - "infra/**"
+      - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: "デプロイするコミットの SHA(40 桁、main に含まれるもの)"
+        required: true
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      release_id: ${{ steps.id.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_id || github.sha }}
+
+      # リリース ID の決定と検査(40 桁の小文字の 16 進。origin/main の履歴に含まれるコミットだけ)
+      - name: リリース ID の検査
+        id: id
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RELEASE_ID: ${{ inputs.release_id }}
+          PUSH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then ID="$INPUT_RELEASE_ID"; else ID="$PUSH_SHA"; fi
+          if ! printf '%s' "$ID" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "リリース ID が 40 桁の小文字の 16 進ではありません" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$ID" origin/main; then
+            echo "リリース ID のコミットが main の履歴に含まれていません" >&2
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$ID" ]; then
+            echo "チェックアウトしたコミットがリリース ID と一致しません" >&2
+            exit 1
+          fi
+          echo "release_id=$ID" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # VM の node_version と同じ版にそろえる(NFR7.5)
+          node-version: 24.22.2
+          cache: npm
+      - run: npm ci
+      - run: npm run build:web
+      # server.mjs(esbuild でまとめたもの)と、アプリが起動時に読む schema.sql を build/ に作る
+      - run: npm run build:server
+
+      # node_modules のない場所で起動できることの確認(NFR5.4)
+      - name: 起動の確認
+        run: |
+          set -euo pipefail
+          CHECK_DIR="$(mktemp -d)"
+          cp build/server.mjs build/schema.sql "$CHECK_DIR/"
+          cd "$CHECK_DIR"
+          HOST=127.0.0.1 PORT=3000 DB_PATH="$CHECK_DIR/app.db" node server.mjs > server.log 2>&1 &
+          SERVER_PID=$!
+          ok=0
+          for _ in $(seq 1 30); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/menu || true)"
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            sleep 1
+          done
+          kill "$SERVER_PID" 2>/dev/null || true
+          wait "$SERVER_PID" 2>/dev/null || true
+          if [ "$ok" -ne 1 ]; then
+            echo "GET /menu が 200 になりませんでした" >&2
+            cat server.log >&2
+            exit 1
+          fi
+
+      # 成果物: 最上位は server.mjs、schema.sql、web/ だけ(deploy.sh が検査する)
+      - name: 成果物の作成
+        env:
+          RELEASE_ID: ${{ steps.id.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/stage"
+          mkdir -p "$STAGE" dist-artifact
+          cp build/server.mjs build/schema.sql "$STAGE/"
+          cp -R web/dist "$STAGE/web"
+          tar --sort=name --owner=0 --group=0 --numeric-owner -C "$STAGE" -cf - server.mjs schema.sql web | gzip -n > "dist-artifact/${RELEASE_ID}.tar.gz"
+          (cd dist-artifact && sha256sum "${RELEASE_ID}.tar.gz" > "${RELEASE_ID}.sha256")
+          tar -tzf "dist-artifact/${RELEASE_ID}.tar.gz" | head -20
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mobile-order-${{ steps.id.outputs.release_id }}
+          path: |
+            dist-artifact/${{ steps.id.outputs.release_id }}.tar.gz
+            dist-artifact/${{ steps.id.outputs.release_id }}.sha256
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      RELEASE_ID: ${{ needs.build.outputs.release_id }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_ZONE: ${{ secrets.GCP_ZONE }}
+      GCP_VM_NAME: ${{ secrets.GCP_VM_NAME }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mobile-order-${{ needs.build.outputs.release_id }}
+          path: artifact
+
+      # 転送前の破損の検出用(改ざんへの防御ではない。deploy.sh がコピーに対して照合し直す)
+      - name: 照合
+        run: |
+          set -euo pipefail
+          cd artifact
+          sha256sum -c "${RELEASE_ID}.sha256"
+
+      # Workload Identity Federation。サービスアカウントキーは使わない
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: 受け取り用のディレクトリ
+        run: |
+          gcloud compute ssh "$GCP_VM_NAME" --zone "$GCP_ZONE" --project "$GCP_PROJECT_ID" \
+            --tunnel-through-iap --quiet --command "mkdir -p incoming"
+
+      - name: 転送
+        run: |
+          gcloud compute scp --zone "$GCP_ZONE" --project "$GCP_PROJECT_ID" --tunnel-through-iap --quiet \
+            "artifact/${RELEASE_ID}.tar.gz" "artifact/${RELEASE_ID}.sha256" "${GCP_VM_NAME}:~/incoming/"
+
+      # 引数はリリース ID だけ。出力はジョブのログと要約に残す(スモークテスト、ロールバック、メモリの計測を含む)
+      - name: 実行
+        env:
+          TRIGGER: ${{ github.event_name }}
+        run: |
+          set +e
+          gcloud compute ssh "$GCP_VM_NAME" --zone "$GCP_ZONE" --project "$GCP_PROJECT_ID" \
+            --tunnel-through-iap --quiet --command "sudo /usr/local/sbin/mobile-order-deploy ${RELEASE_ID}" 2>&1 | tee deploy.log
+          rc="${PIPESTATUS[0]}"
+          set -e
+          {
+            echo "## デプロイの結果"
+            echo ""
+            echo "- リリース ID: \`${RELEASE_ID}\`(トリガー: ${TRIGGER})"
+            case "$rc" in
+              0) echo "- 結果: 成功" ;;
+              3) echo "- 結果: 成功したが、メモリの計測が基準を超えた(スワップの大きさを見直す)" ;;
+              10) echo "- 結果: スモークテストが不合格で、直前の版へ自動ロールバックして復旧した" ;;
+              11) echo "- 結果: ロールバックにも失敗した(手動の復旧が必要)" ;;
+              12) echo "- 結果: データディスクが未マウントのため、ロールバックしなかった(手順書のマウントの確認へ)" ;;
+              13) echo "- 結果: 戻す先がない(初回、または同じ ID の再デプロイ)ため、ロールバックしなかった" ;;
+              *) echo "- 結果: 失敗(終了コード ${rc})" ;;
+            esac
+            echo ""
+            echo "<details><summary>deploy.sh の出力(末尾 200 行)</summary>"
+            echo ""
+            echo '```'
+            tail -n 200 deploy.log
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"

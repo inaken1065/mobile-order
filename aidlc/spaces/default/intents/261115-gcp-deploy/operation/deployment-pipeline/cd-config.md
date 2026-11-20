@@ -17,7 +17,7 @@
 
 - CD は `.github/workflows/deploy.yml` の 1 つ。`terraform apply` は置かない(NFR2.9、ALWAYS ルール)。
 - Google Cloud への認証は Workload Identity Federation だけ。キーは使わない(NFR2.4、NEVER ルール)。
-- ビルドはランナーで行い(R-09 の決定)、VM には成果物(`server.mjs` と `web/`)だけを送る。VM には `node_modules` も TypeScript も入れない。
+- ビルドはランナーで行い(R-09 の決定)、VM には成果物(`server.mjs`、`schema.sql`、`web/`)だけを送る。VM には `node_modules` も TypeScript も入れない。
 - 成果物の出どころの保証は「`main` だけが WIF で認証できる」ことと、デプロイ前の CI の必須チェックである(`cicd-pipeline.md`)。
 - この文書は設計である。ワークフローの実ファイルは、実装の段階で、ここの内容どおりに作る。
 
@@ -55,9 +55,9 @@
 | 1 | checkout と入力検査 | 上の「リリース ID と対象のコミット」。`fetch-depth: 0` | `[Q4]` |
 | 2 | 依存の取得 | `npm ci`(esbuild は `devDependencies` にあり、ロックファイルで版と整合性が固定される。`[Q1]`) | NFR5.4 |
 | 3 | 画面のビルド | `npm run build:web`(出力は `web/dist`) | FR5.2 |
-| 4 | サーバーのまとめ | `npx esbuild server/src/index.ts --bundle --platform=node --format=esm --target=node24 --outfile=build/server.mjs`。`node:` の組み込みは外部扱い(`--platform=node` の既定)。ソースマップは付けない | FR5.2、NFR5.4 |
+| 4 | サーバーのまとめ | `npm run build:server`(esbuild 0.28.2 を `devDependencies` に固定。`esbuild server/src/index.ts --bundle --platform=node --format=esm --target=node24 --banner:js=<createRequire> --outfile=build/server.mjs` のあと、`server/src/db/schema.sql` を `build/schema.sql` へコピー)。`node:` の組み込みは外部扱い。ESM に `createRequire` の banner が要る。`schema.sql` は、アプリが起動時に `server.mjs` と同じ場所から読むため、同梱する。ソースマップは付けない | FR5.2、NFR5.4 |
 | 5 | 起動の確認 | ランナーで `node build/server.mjs` を、`node_modules` のない場所から、`HOST=127.0.0.1 PORT=3000 DB_PATH=<一時ファイル>` で起動し、`GET /menu` が 200(最大 30 秒待つ)。動かなければここで失敗にする。終了後にプロセスを止める | NFR5.4 |
-| 6 | 成果物の作成 | `build/server.mjs` と `web/dist` の中身を `web/` として、1 つの tar にまとめる(最上位は `server.mjs` と `web/` だけ)。`tar --sort=name --owner=0 --group=0 --numeric-owner` で作り、`gzip` する。ファイル名は `<ID>.tar.gz`。SHA-256 を `<ID>.sha256` に書く | `cicd-pipeline.md` |
+| 6 | 成果物の作成 | `build/server.mjs`、`build/schema.sql`、`web/dist` の中身を `web/` として、1 つの tar にまとめる(最上位は `server.mjs`、`schema.sql`、`web/` だけ)。`tar --sort=name --owner=0 --group=0 --numeric-owner` で作り、`gzip` する。ファイル名は `<ID>.tar.gz`。SHA-256 を `<ID>.sha256` に書く | `cicd-pipeline.md` |
 | 7 | 成果物の保存 | `actions/upload-artifact`(SHA で固定)。名前 `mobile-order-<ID>`、`retention-days: 7`、対象は `<ID>.tar.gz` と `<ID>.sha256` だけ | `[Q4]`(CI)、`ci-config.md` |
 
 ビルドの手順 4 の `server/src/index.ts` は既存のエントリポイントである(`package.json` の `dev:server`)。ビルドの手順 5 で `GET /menu` が通らない場合は、`--format=cjs` への切り替えを検討する(`performance-design.md`)。この判断は、ウォーキングスケルトンの最初の合格条件で行う。
@@ -76,7 +76,7 @@
 | 2 | 照合 | ランナー上で `sha256sum -c`。転送前の破損の検出用 | NFR5.4 |
 | 3 | 認証 | `google-github-actions/auth`(SHA で固定)。`workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}`、`service_account: ${{ secrets.GCP_DEPLOY_SA }}`。キーは使わない | NFR2.4、NFR2.5、FR6.1 |
 | 4 | gcloud | `google-github-actions/setup-gcloud`(SHA で固定) | |
-| 5 | 受け取り用のディレクトリ | `gcloud compute ssh "$GCP_VM_NAME" --zone "$GCP_ZONE" --project "$GCP_PROJECT_ID" --tunnel-through-iap --quiet -- mkdir -p incoming` | `[Q2]`(インフラ設計) |
+| 5 | 受け取り用のディレクトリ | `gcloud compute ssh "$GCP_VM_NAME" --zone "$GCP_ZONE" --project "$GCP_PROJECT_ID" --tunnel-through-iap --quiet -- mkdir -p incoming`(`incoming/` は起動スクリプトが作成済みで、ホームは root 所有。ここでは何も変わらないが、ssh の疎通の確認を兼ねる。失敗したら起動スクリプトの再実行へ進む。ウォーキングスケルトンでは、(1) 起動後の `getent passwd sa_<unique_id>`、(2) ホームの所有者が root のままであること、(3) 初回の `scp` が通ること、を順に確認する) | `[Q2]`(インフラ設計) |
 | 6 | 転送 | `gcloud compute scp --tunnel-through-iap`(同じ `--zone` と `--project`)で、`<ID>.tar.gz` と `<ID>.sha256` を `~/incoming/` に置く | `cicd-pipeline.md` |
 | 7 | 実行 | `gcloud compute ssh ... --tunnel-through-iap --quiet -- sudo /usr/local/sbin/mobile-order-deploy <ID>`。引数はリリース ID だけ。出力はジョブのログに残す | `cicd-pipeline.md`、NFR6.6 |
 | 8 | 結果 | `deploy.sh` の終了コード、`free -m` の記録の判定、スモークテストの出力を、ジョブの要約(`$GITHUB_STEP_SUMMARY`)に出す(`[Q5]`)。終了コードが 0 でなければジョブを失敗にする | `[Q5]`、NFR5.3 |

@@ -1,0 +1,24 @@
+[Unit]
+Description=mobile-order API
+After=local-fs.target
+RequiresMountsFor=/mnt/data
+AssertPathIsMountPoint=/mnt/data
+StartLimitIntervalSec=0
+
+[Service]
+User=mobile-order
+Environment=HOST=127.0.0.1 PORT=3000 DB_PATH=/mnt/data/app.db
+Environment=NODE_OPTIONS=--max-old-space-size=192
+ExecStartPre=/usr/local/bin/node -e "if (+process.versions.node.split('.')[0] < 24) process.exit(78); try { require('node:sqlite') } catch { process.exit(78) }"
+ExecStart=/usr/local/bin/node /opt/mobile-order/current/server.mjs
+Restart=always
+RestartSec=2
+RestartPreventExitStatus=78
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/mnt/data
+
+[Install]
+WantedBy=multi-user.target

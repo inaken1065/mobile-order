@@ -1,0 +1,66 @@
+name: ci
+
+# PR の検証だけを行う。Google Cloud には認証しない(NFR2.5)。
+# ジョブ名(terraform、app、secrets)は、main の保護ルールの必須ステータスチェックの名前と一致させる。
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.17.2
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive -diff
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  app:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # VM の node_version と同じ版にそろえる
+          node-version: 24.22.2
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # インフラとデプロイのスクリプトのテスト(HOST、CI のガード、deploy.sh、シェルの構文)
+      - run: npm run test:infra
+      - run: npm run build:web
+
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # gitleaks のバイナリを直接取得し、固定した SHA-256 で照合してから、履歴全体を検査する
+      - name: gitleaks
+        run: |
+          set -euo pipefail
+          VERSION=8.30.1
+          SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          curl -fsSL -o "$RUNNER_TEMP/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "${SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" detect --source . --redact --no-banner
+      # tfvars、サービスアカウントキーの JSON、ワークフローの構成、アクションの SHA 固定(G7〜G10)
+      - name: ci-guards
+        run: bash scripts/ci-guards.sh .

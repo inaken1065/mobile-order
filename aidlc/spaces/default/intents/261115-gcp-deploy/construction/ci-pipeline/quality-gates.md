@@ -17,7 +17,7 @@
 | G1 | Terraform の整形 | `terraform` | `terraform fmt -check -recursive` の終了コードが 0 | マージ不可 | FR1.3 |
 | G2 | Terraform の検証 | `terraform` | `terraform init -backend=false` と `terraform validate` の終了コードが 0 | マージ不可 | FR1.3 |
 | G3 | 型チェック | `app` | `npm run typecheck` の終了コードが 0 | マージ不可 | FR5.1 |
-| G4 | 既存のテスト | `app` | `npm test` の終了コードが 0(契約、サーバー、画面) | マージ不可 | FR5.1 |
+| G4 | 既存のテストとインフラのテスト | `app` | `npm test`(契約、サーバー、画面)と `npm run test:infra`(HOST、CI のガード、`deploy.sh`、シェルの構文)の終了コードがどちらも 0 | マージ不可 | FR5.1 |
 | G5 | 画面のビルド | `app` | `npm run build:web` の終了コードが 0 | マージ不可 | FR5.1 |
 | G6 | 秘密情報の検査 | `secrets` | `gitleaks` が履歴全体で 0 件 | マージ不可 | NFR2.4 |
 | G7 | tfvars の混入 | `secrets` | `git ls-files` に `*.tfvars` がない(`terraform.tfvars.example` を除く) | マージ不可 | NFR2.7 |

@@ -1,6 +1,7 @@
 # dependencies / build output
 node_modules/
 web/dist/
+build/
 *.tsbuildinfo
 
 # SQLite DB files (dev data and per-Bolt test DBs; WAL/SHM side files included)

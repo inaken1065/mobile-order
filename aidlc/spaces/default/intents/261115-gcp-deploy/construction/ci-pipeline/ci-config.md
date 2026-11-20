@@ -51,7 +51,7 @@
 | 1 | checkout、setup-node | SHA で固定したアクション。`node-version` は固定、`cache: npm` |
 | 2 | install | `npm ci` |
 | 3 | 型チェック | `npm run typecheck`(`tsc -p tsconfig.json && tsc -p web/tsconfig.json`) |
-| 4 | テスト | `npm test`(契約、サーバーの単体、画面の各テスト) |
+| 4 | テスト | `npm test`(契約、サーバーの単体、画面の各テスト)と、続けて `npm run test:infra`(HOST、CI のガード、`deploy.sh`、シェルの構文。Code Generation で追加) |
 | 5 | 画面のビルド | `npm run build:web`(ビルドが壊れていないことの確認。成果物は残さない) |
 
 合否: いずれかの終了コードが 0 でなければ失敗(FR5.1)。新しいテストの追加は範囲外。`mutation:check` と `e2e/` は、この intent の CI に含めない(既存のスクリプトのうち `package.json` の `test` に含まれるものだけを必須とする)。
@@ -153,7 +153,7 @@ updates:
 
 | 項目 | 内容 |
 |---|---|
-| 対象 | `deploy.yml` の `build` ジョブが作る、デプロイ用の成果物(`server.mjs` と `web/` の tar と、その SHA-256 のファイル)だけ |
+| 対象 | `deploy.yml` の `build` ジョブが作る、デプロイ用の成果物(`server.mjs`、`schema.sql`、`web/` の tar と、その SHA-256 のファイル)だけ |
 | 保持 | GitHub Actions のアーティファクトに 7 日(`retention-days: 7`)。再現用 |
 | 名前 | `mobile-order-<リリース ID>`(リリース ID はコミットの SHA) |
 | `ci.yml` | アーティファクトを残さない(検証のみ) |

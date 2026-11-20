@@ -10,7 +10,7 @@
 
 - CI(PR)は Google Cloud に認証しない(NFR2.5)。検証だけを行う。
 - CD(`main` へのマージ)は、WIF で認証し、IAP 経由でアプリの成果物だけを VM に送る。`terraform apply` は CI で実行しない。人間が `plan` を確認して承認してから、手動で実行する(NFR2.9、ALWAYS ルール)。
-- `deploy.sh`(VM 上では `/usr/local/sbin/mobile-order-deploy`)は CI から送らない。VM の起動スクリプトが、root 所有・書き込み不可で配置する。CI から VM に送るのはアプリの成果物(`server.mjs`、`web/`)だけである。
+- `deploy.sh`(VM 上では `/usr/local/sbin/mobile-order-deploy`)は CI から送らない。VM の起動スクリプトが、root 所有・書き込み不可で配置する。CI から VM に送るのはアプリの成果物(`server.mjs`、`schema.sql`、`web/`)だけである。
 
 ## ワークフロー 1: `ci.yml`(PR)
 
@@ -30,10 +30,10 @@
 
 | 順 | ジョブ / ステップ | 内容 | 要件 |
 |---|---|---|---|
-| 1 | `build`(権限は `contents: read` のみ。Google Cloud には触れない) | Node.js を VM と同じ固定の版にそろえる。`npm ci`。画面を Vite でビルド(`web/`)。サーバーを、版を固定した esbuild で `server.mjs` にまとめる(`--platform=node --format=esm --bundle`、`node:` は外部扱い)。`tar` で 1 つの成果物にし、SHA-256 を計算する。リリース ID は `git` のコミットの SHA | NFR5.3、NFR5.4、NFR7.5 |
+| 1 | `build`(権限は `contents: read` のみ。Google Cloud には触れない) | Node.js を VM と同じ固定の版にそろえる。`npm ci`。画面を Vite でビルド(`web/`)。サーバーを、版を固定した esbuild で `server.mjs` にまとめ、`schema.sql` を並べて置く(`npm run build:server`。`--platform=node --format=esm --bundle`、`node:` は外部扱い。ESM のバンドルが動的な `require` を使うため、`--banner:js` で `createRequire` を足す)。アプリが起動時に `server.mjs` と同じ場所の `schema.sql` を読むため、1 ファイルにはまとめられない。`tar` で 1 つの成果物にし、SHA-256 を計算する。リリース ID は `git` のコミットの SHA | NFR5.3、NFR5.4、NFR7.5 |
 | 2 | `build` の確認 | ランナーで `node server.mjs` を `node_modules` なしで起動し、`GET /menu` が 200 であること(ウォーキングスケルトンと同じ確認の自動版)。動かなければここで失敗にする | NFR5.4 |
 | 3 | `deploy`(権限は `id-token: write` と `contents: read`) | `google-github-actions/auth`(WIF。`GCP_WIF_PROVIDER` と `GCP_DEPLOY_SA`)で認証。キーは使わない | NFR2.4、NFR2.5 |
-| 4 | 転送 | まず `gcloud compute ssh --tunnel-through-iap -- mkdir -p incoming`(OS Login ユーザーのホームに受け取り用のディレクトリを作る。初回のログインでホームも作られる)を実行し、続けて `gcloud compute scp --tunnel-through-iap` で、成果物と SHA-256 のファイルを `~/incoming/` に置く。SHA-256 のファイルは、転送の破損の検出用で、改ざんへの防御ではない(下の「root での展開の安全策」) | `[Q2]` |
+| 4 | 転送 | まず `gcloud compute ssh --tunnel-through-iap -- mkdir -p incoming`(OS Login ユーザーのホームに受け取り用のディレクトリを作る。初回のログインでホームも作られる)を実行し(`incoming/` は起動スクリプトが作っておくため、実質は疎通と、起動スクリプトの実行済みの確認。ホームは root 所有で、ユーザーは作れない。失敗したら、起動スクリプトの再実行へ進む。初回のログインでホームが作られるのは、起動スクリプトより先にログインした場合だけで、その場合も起動スクリプトの再実行で root 所有に直る)、続けて `gcloud compute scp --tunnel-through-iap` で、成果物と SHA-256 のファイルを `~/incoming/` に置く。SHA-256 のファイルは、転送の破損の検出用で、改ざんへの防御ではない(下の「root での展開の安全策」) | `[Q2]` |
 | 5 | 実行 | `gcloud compute ssh --tunnel-through-iap -- sudo /usr/local/sbin/mobile-order-deploy <リリース ID>`。引数はリリース ID だけ | `[Q2]`、`[Q4]` |
 | 6 | 結果 | `deploy.sh` の終了コードと、`free -m` の記録の判定、スモークテストの出力を、ジョブのログに出す。非 0 ならジョブを失敗にする | NFR6.6、NFR5.3 |
 
@@ -45,9 +45,10 @@ GitHub のシークレット(リポジトリ): `GCP_PROJECT_ID`、`GCP_WIF_PROVI
 
 | 順 | 内容 |
 |---|---|
+| 受け取り用のディレクトリの保護 | 起動スクリプトが、デプロイ用ユーザー(`sa_<unique_id>`)のホームを `root:root`・`0755` にし、その中の `incoming/` だけをそのユーザーの所有(`0700`)にする。ユーザーは `incoming/` の中には書けるが、ホームの中の `incoming` をリンクなどへ置き換えられない。`deploy.sh` は、最初に(1) ホームがリンクでなく、root 所有で、group と other に書き込み権限がないこと、(2) `incoming/` がリンクでなく、ディレクトリであることを確認し、満たさなければ何も読まずに失敗する(終了コード 1) |
 | 入力の検査 | 引数は 1 つだけで、リリース ID が `^[0-9a-f]{40}$` に一致すること。成果物は、`$SUDO_USER` のホーム(`getent passwd "$SUDO_USER"` で引く)の `incoming/<ID>.tar.gz` と `.sha256` に固定(引数でパスを受けない)。照合は、次の行の root 所有の `work/` へのコピーの**後**に、コピーしたファイルに対して行い、一致しなければ失敗(確認後のすり替えを防ぐ) |
-| 展開 | 成果物をまず root 所有の一時ディレクトリ(`/var/lib/mobile-order/work/<ID>/`、`0700`)に `install -m 0600` でコピーし(`.tar.gz` と `.sha256` の両方)、**コピーに対して** SHA-256 の照合、検査、展開を行う(コピー後に元ファイルを差し替えられても影響しない)。`releases/.tmp-<ID>/` に展開し、検査が通ったら `mv` で `releases/<ID>/` にする。残っている `.tmp-*` と `work/` は先に削除する。`releases/<ID>` が既にあれば展開しない |
-| root での展開の安全策 | 展開の前に `tar -tvf` で一覧を取り、(a) 通常ファイルとディレクトリ以外(シンボリックリンク、ハードリンク、デバイス、FIFO)があれば失敗、(b) パスが絶対パスまたは `..` を含めば失敗、(c) 最上位が `server.mjs` と `web/` 以外なら失敗にする。展開は `tar --no-same-owner --no-same-permissions --no-overwrite-dir` で行い、展開後に `find -type l` などで再検査し、所有者を `root:root`、ディレクトリを `0755`、ファイルを `0644` に正規化する(setuid などを残さない)。SHA-256 の照合は転送の破損の検出用(コピー後のファイルに対して行う)。ワークフローの経路(`main` だけが WIF で認証できる)が、成果物の出どころの保証である |
+| 展開 | 成果物をまず root 所有の一時ディレクトリ(`/var/lib/mobile-order/work/<ID>/`、`0700`)に リンクをたどらない `cp -P`(60 秒の `timeout` つき)でコピーし、`0600` にし(`.tar.gz` と `.sha256` の両方)、**コピーに対して** SHA-256 の照合、検査、展開を行う(コピー後に元ファイルを差し替えられても影響しない)。`releases/.tmp-<ID>/` に展開し、検査が通ったら `mv` で `releases/<ID>/` にする。残っている `.tmp-*` と `work/` は先に削除する。`releases/<ID>` が既にあれば展開しない |
+| root での展開の安全策 | 展開の前に `tar -tvf` で一覧を取り、(a) 通常ファイルとディレクトリ以外(シンボリックリンク、ハードリンク、デバイス、FIFO)があれば失敗、(b) パスが絶対パスまたは `..` を含めば失敗、(c) 最上位が `server.mjs`、`schema.sql`、`web/` の 3 つ(完全一致)以外なら失敗にする(許可リストを変えたのは `schema.sql` の 1 件の追加だけで、他の拒否は弱めていない)。成果物のファイル名は ASCII 限定とする(`tar -t` のロケールによっては非 ASCII が `\303\251` の形になり、バックスラッシュの検査で拒否されるため)。名前に制御文字(`tar -t` は `\001` などの形に変えて表示するため、バックスラッシュも拒否する)があれば失敗にする。展開後に `server.mjs`、`schema.sql`、`web/index.html` の存在を確認する。展開は `tar --no-same-owner --no-same-permissions --no-overwrite-dir` で行い、展開後に `find -type l` などで再検査し、所有者を `root:root`、ディレクトリを `0755`、ファイルを `0644` に正規化する(setuid などを残さない)。成果物は、`incoming` のリンクをたどらずに root 所有の `work/` へコピーし(`cp -P`)、検査(通常ファイルであること、SHA-256、`tar` の一覧)はすべてそのコピーに対して行う。検査と配置の間にファイルが差し替えられても、検査していないものは読み込まない。SHA-256 の照合は転送の破損の検出用である。ワークフローの経路(`main` だけが WIF で認証できる)が、成果物の出どころの保証である |
 | 切り替え | `prev=$(readlink current)` を記録。`ln -sfn` で `current` を新しい版に向け、`systemctl restart mobile-order` |
 | 計測 | デプロイの開始から完了まで 5 秒おきに `free -m` を記録し、スワップの最大が 512 MB 以下、`available` の最小が 100 MB 以上かを判定する(NFR5.3) |
 | スモークテスト | VM 上の `localhost` に対して、60 秒以内に `GET /`(200)と `GET /api/menu`(200 と `{ items }` の JSON)(NFR5.5) |

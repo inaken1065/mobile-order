@@ -1,0 +1,10 @@
+# このファイルは例(プレースホルダーだけ)。実値は terraform.tfvars に書く(.gitignore で除外済み。コミットしない)。
+project_id        = "your-project-id"
+region            = "us-central1"
+zone              = "us-central1-a"
+allowed_ip_cidr   = "203.0.113.10/32"
+github_repository = "your-github-user/your-repo"
+owner_email       = "owner@example.com"
+node_version      = "24.0.0"
+# 公式の https://nodejs.org/dist/v<node_version>/SHASUMS256.txt の node-v<版>-linux-x64.tar.xz の値
+node_sha256       = "0000000000000000000000000000000000000000000000000000000000000000"
