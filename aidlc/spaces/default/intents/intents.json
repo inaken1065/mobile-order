@@ -6,5 +6,13 @@
     "scope": "refactor",
     "status": "complete",
     "request": "3ba616ba"
+  },
+  {
+    "uuid": "01a1dee8-b8f7-74a2-8289-a1bc9d10b240",
+    "slug": "gcp-deploy",
+    "dirName": "261115-gcp-deploy",
+    "scope": "infra",
+    "status": "in-flight",
+    "request": "eb6e5892"
   }
 ]
