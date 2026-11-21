@@ -6,6 +6,7 @@ import { createServer } from 'node:net';
 import { networkInterfaces, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { resolveHost } from '../../src/host';
 
 /** 空きポートを 1 つ取得する。 */
 async function freePort(): Promise<number> {
@@ -95,4 +96,10 @@ test('このマシンにないアドレスを HOST に指定すると起動に�
     await stop(child);
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('resolveHost: 未指定と空文字は 0.0.0.0、指定があればその値になる', () => {
+  assert.equal(resolveHost(undefined), '0.0.0.0');
+  assert.equal(resolveHost(''), '0.0.0.0');
+  assert.equal(resolveHost('127.0.0.1'), '127.0.0.1');
 });

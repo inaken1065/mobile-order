@@ -96,3 +96,10 @@
 - 解決済み: `.gitignore` に `build/` を追加した。
 - 解決済み: `incoming` ディレクトリ自体の差し替えは、ホームの所有者の変更で防ぐ(上)。成果物のファイル名は ASCII 限定(`cicd-pipeline.md` に記載)。
 - 実機でしか確認できない: OS Login のホームが、起動スクリプトの時点で `getent passwd` から引け、`root` 所有のままでも `gcloud compute ssh/scp`(IAP)が動くこと、OS Login の初回ログインがすでにあるホームを壊さないこと。
+
+## Deployment Execution で実機確認する項目
+
+- OS Login のホームディレクトリの所有者(root:root、0755)を変える処理の順序(`startup.sh.tpl`)。
+  - 新規 VM で、起動スクリプトの時点で `getent passwd sa_<unique_id>` が引けること。引けなければ `INCOMING_FAILED` になり、最初のデプロイが失敗する。
+  - root 所有のホームで、OS Login の初回ログインと `gcloud compute ssh/scp`(IAP)が動くこと。
+  - 出どころ: コードレビュー(2026-11-21)の指摘。構文確認(`bash -n`)ではわからないため、実機で確認する。

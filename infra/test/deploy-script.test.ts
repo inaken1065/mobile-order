@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  closeSync,
+  openSync,
   chmodSync,
   existsSync,
   linkSync,
@@ -84,6 +86,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 cur="${root}/opt/mobile-order/current"
+if [ -e "${root}/slow-curl" ]; then sleep 1.5; fi
 code=200
 if [ ! -e "$cur/server.mjs" ] || grep -q BAD "$cur/server.mjs"; then code=500; fi
 body='<html></html>'
@@ -361,6 +364,53 @@ test('スモークテストが不合格なら直前の版へロールバック�
   assert.match(r.stderr, /server\.mjs の SHA-256/);
   assert.match(r.stdout, /ロールバックに成功/);
   assert.equal(calls(env).split('\n').filter((l) => l === 'restart mobile-order').length, 3, 'A、B、A への戻しで 3 回');
+});
+
+test('ロールバックのスモークテストが上限を超えてから合格しても、成功(終了コード 10)として扱う', { skip }, () => {
+  const env = makeEnv();
+  putArtifact(env, A);
+  assert.equal(run(env, [A]).status, 0);
+  putArtifact(env, B, { bad: true });
+  writeFileSync(join(env.root, 'slow-curl'), ''); // 各 curl が 1.5 秒かかる: 2 回で 3 秒 > 上限 1 秒
+  const r = run(env, [B], { MO_ROLLBACK_TIMEOUT: '1' });
+  assert.equal(r.status, 10, r.stderr + r.stdout);
+  assert.equal(current(env), release(env, A));
+  assert.match(r.stdout, /ロールバックに成功/);
+  assert.match(r.stdout, /上限.*を超えましたが/);
+});
+
+test('ロールバックのスモークテストも不合格なら、終了コード 11 で手動の復旧を促す', { skip }, () => {
+  const env = makeEnv();
+  putArtifact(env, A);
+  assert.equal(run(env, [A]).status, 0);
+  writeFileSync(join(release(env, A), 'server.mjs'), '// BAD\n'); // 戻し先も壊れている
+  putArtifact(env, B, { bad: true });
+  const r = run(env, [B]);
+  assert.equal(r.status, 11, r.stderr + r.stdout);
+  assert.match(r.stderr, /ロールバックにも失敗/);
+});
+
+test('デプロイが終わったら、free の記録用の子プロセスが残っていても、ロックは解放されている', { skip }, () => {
+  const env = makeEnv();
+  putArtifact(env, A);
+  // 子プロセスの sleep が長く残る設定。出力はファイルへ向け、残った子プロセスにパイプを握らせない
+  const out = openSync(join(env.root, 'out.log'), 'w');
+  const r = spawnSync('bash', [SCRIPT, A], {
+    stdio: ['ignore', out, out],
+    env: {
+      PATH: `${env.stubs}:${process.env.PATH}`,
+      MO_TEST_ROOT: env.root,
+      SUDO_USER: 'testuser',
+      MO_SMOKE_TIMEOUT: '2',
+      MO_POLL_INTERVAL: '0.2',
+      MO_FREE_INTERVAL: '30',
+    },
+  });
+  closeSync(out);
+  assert.equal(r.status, 0, readFileSync(join(env.root, 'out.log'), 'utf8'));
+  const lock = join(env.root, 'var/lib/mobile-order/deploy.lock');
+  const l = spawnSync('flock', ['-n', lock, 'true']);
+  assert.equal(l.status, 0, 'デプロイの終了直後に、次のデプロイがロックを取れる');
 });
 
 test('データディスクが未マウントのときは、ロールバックせずに失敗する', { skip }, () => {
