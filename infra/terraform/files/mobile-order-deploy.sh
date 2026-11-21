@@ -184,7 +184,7 @@ else
   if ! tar -tzvf "$WORK/artifact.tar.gz" > "$WORK/list-verbose.txt" 2>"$WORK/tar-err.txt"; then die "tar の一覧を取得できません"; fi
   if ! tar -tzf "$WORK/artifact.tar.gz" > "$WORK/list-names.txt" 2>>"$WORK/tar-err.txt"; then die "tar の一覧を取得できません"; fi
   if [ ! -s "$WORK/list-names.txt" ]; then die "tar が空です"; fi
-  if [ "$(cut -c1 "$WORK/list-verbose.txt" | grep -Ev '^[-d]$' | wc -l)" -ne 0 ]; then
+  if [ "$(cut -c1 "$WORK/list-verbose.txt" | grep -Evc '^[-d]$')" -ne 0 ]; then
     die "tar に通常ファイルとディレクトリ以外(シンボリックリンクなど)が含まれています"
   fi
   # (b) 絶対パスと .. は失敗、(c) 最上位は server.mjs、schema.sql、web/ だけ
@@ -280,7 +280,7 @@ if switch_and_smoke; then
   if ! evaluate_memory; then rc=3; fi
   cleanup_work
   rm -f "$FREE_LOG"
-  [ "$rc" -eq 0 ] && log "成功: $ID" || log "成功(メモリの計測は基準超過): $ID"
+  if [ "$rc" -eq 0 ]; then log "成功: $ID"; else log "成功(メモリの計測は基準超過): $ID"; fi
   exit "$rc"
 fi
 

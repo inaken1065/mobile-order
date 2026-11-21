@@ -44,6 +44,10 @@ jobs:
       # インフラとデプロイのスクリプトのテスト(HOST、CI のガード、deploy.sh、シェルの構文)
       - run: npm run test:infra
       - run: npm run build:web
+      # PR の段階でサーバーのバンドル(esbuild)の失敗に気づく。deploy.yml と同じコマンド
+      - run: npm run build:server
+      # deploy.sh、ci-guards.sh、起動スクリプト(描画後)の静的解析。shellcheck は ubuntu-24.04 のランナーに入っている
+      - run: bash scripts/shellcheck.sh
 
   secrets:
     runs-on: ubuntu-24.04
