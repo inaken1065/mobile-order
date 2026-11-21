@@ -6,11 +6,13 @@
     "dev:server": "tsx watch server/src/index.ts",
     "dev:web": "vite web",
     "build:web": "vite build web",
+    "build:server": "esbuild server/src/index.ts --bundle --platform=node --format=esm --target=node24 --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=build/server.mjs && cp server/src/db/schema.sql build/schema.sql",
     "db:reset": "tsx server/src/db/reset.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
     "test:contracts": "node --import tsx --test \"contracts/test/*.test.ts\"",
     "test:units": "node --import tsx --test \"server/test/*/*.test.ts\"",
     "test:web": "node --import tsx --test \"web/test/*.test.ts\"",
+    "test:infra": "node --import tsx --test server/test/app/host-binding.test.ts scripts/test/ci-guards.test.ts infra/test/deploy-script.test.ts infra/test/shell-syntax.test.ts",
     "test": "npm run test:contracts && npm run test:units && npm run test:web",
     "mutation:check": "tsx scripts/mutation-check.ts"
   },
@@ -24,6 +26,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "esbuild": "0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"

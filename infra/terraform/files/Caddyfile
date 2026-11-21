@@ -1,0 +1,22 @@
+{
+	admin off
+	auto_https off
+}
+http://:80 {
+	header X-Content-Type-Options nosniff
+	encode gzip
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+	handle /assets/* {
+		root * /opt/mobile-order/current/web
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+	handle {
+		root * /opt/mobile-order/current/web
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

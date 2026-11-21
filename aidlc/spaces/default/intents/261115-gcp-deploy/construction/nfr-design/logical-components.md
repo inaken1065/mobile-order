@@ -17,7 +17,7 @@ VM 1 台、ゾーン 1 つ。部品は「ビルドの経路(GitHub Actions の�
 | LC1 | ファイアウォール(VPC) | GCP | 80 番を自分の IP(CIDR)だけ、22 番を IAP の範囲 `35.235.240.0/20` だけから許可 | NFR2.1〜2.3 |
 | LC2 | Caddy(`caddy.service`) | VM | `:80` で受け、`/api` を外して `127.0.0.1:3000` に転送し、画面の静的ファイル(`current/web`)を配信 | NFR5.8、NFR2.3 |
 | LC3 | Fastify(`mobile-order.service`) | VM | `node current/server.mjs`。`HOST=127.0.0.1`、`PORT=3000`、`DB_PATH=/mnt/data/app.db` | NFR2.12、NFR3.1、NFR3.8 |
-| LC4 | リリース置き場 | VM(ブートディスク) | `/opt/mobile-order/releases/<id>/`(`server.mjs`、`web/`)と、`current` のシンボリックリンク。直前の 1 世代だけ残す | NFR3.3、NFR5.3 |
+| LC4 | リリース置き場 | VM(ブートディスク) | `/opt/mobile-order/releases/<id>/`(`server.mjs`、`schema.sql`、`web/`)と、`current` のシンボリックリンク。直前の 1 世代だけ残す | NFR3.3、NFR5.3 |
 | LC5 | データディスクと SQLite | 永続ディスク(別リソース) | `/mnt/data`(fstab で `nofail`)。DB は `/mnt/data/app.db`。`prevent_destroy` で保護 | NFR3.6、NFR3.8、NFR4.4 |
 | LC6 | スワップファイル | VM(ブートディスク) | 1 GB。`vm.swappiness=10`。fstab で永続化 | NFR5.1、NFR5.2 |
 | LC7 | journald | VM | 7 日・200 MB。アプリと Caddy のログを集める | NFR6.1、NFR6.2 |

@@ -61,7 +61,7 @@ WantedBy=multi-user.target
 
 配置は `/opt/mobile-order/releases/<id>/` と、`current` のシンボリックリンクで行う(`[Q2]`)。`deploy.sh` の流れ:
 
-1. 成果物(`server.mjs`、`web/`)を一時ディレクトリ(`releases/.tmp-<id>/`)に展開し、展開が完了してから `mv` で `releases/<新 id>/` にする(中断した展開が `releases/<id>` に不完全な形で残らない)。起動時と展開の前に、`.tmp-*` が残っていれば削除する。
+1. 成果物(`server.mjs`、`schema.sql`、`web/`)を一時ディレクトリ(`releases/.tmp-<id>/`)に展開し、展開が完了してから `mv` で `releases/<新 id>/` にする(中断した展開が `releases/<id>` に不完全な形で残らない)。起動時と展開の前に、`.tmp-*` が残っていれば削除する。
 2. 直前の版を `prev` として記録する(`readlink current`)。
 3. `ln -sfn` で `current` を新しい版に向け、`systemctl restart mobile-order` を実行する。
 4. スモークテストを、VM 上の `localhost` に対して 60 秒以内に実行する(NFR5.5)。`GET /`(Caddy 経由)と `GET /api/menu`(200 と `{ items }` の JSON)の両方。
