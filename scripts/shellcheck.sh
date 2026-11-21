@@ -1,7 +1,7 @@
 #!/bin/bash
 # シェルスクリプトの静的解析(ci.yml の app ジョブが実行する)。
 # 対象: deploy.sh、ci-guards.sh、起動スクリプト(Terraform の templatefile と同じ置き換えをしたあと)。
-# 使い方: scripts/shellcheck.sh   環境変数 SHELLCHECK でコマンドを差し替えられる(例: docker 経由)。
+# 使い方: scripts/shellcheck.sh   環境変数 SHELLCHECK でコマンドを差し替えられる(例: "docker run --rm")。版は 0.11.0 に固定。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -35,9 +35,18 @@ fs.writeFileSync(out, tpl.replace(/\$\{([^}]*)\}/g, (_, n) => {
 
 # 実行するコマンドは、環境変数で差し替えられる(既定は shellcheck)
 read -r -a SC <<< "${SHELLCHECK:-shellcheck}"
+# CI と同じ版(0.11.0)で検査する。docker 以外のときは、版を確かめる
+EXPECT_VERSION="0.11.0"
+if [ "${SC[0]}" != "docker" ]; then
+  ACTUAL_VERSION="$("${SC[@]}" --version | sed -n 's/^version: //p')"
+  if [ "$ACTUAL_VERSION" != "$EXPECT_VERSION" ]; then
+    echo "shellcheck の版が違います(期待 $EXPECT_VERSION、実際 ${ACTUAL_VERSION:-不明})" >&2
+    exit 1
+  fi
+fi
 if [ "${SC[0]}" = "docker" ]; then
   # docker 経由のときは、作業ディレクトリをコンテナに渡す
-  "${SC[@]}" -v "$ROOT:/repo:ro" -v "$WORK:/work:ro" koalaman/shellcheck:stable \
+  "${SC[@]}" -v "$ROOT:/repo:ro" -v "$WORK:/work:ro" koalaman/shellcheck:v0.11.0 \
     /repo/infra/terraform/files/mobile-order-deploy.sh /repo/scripts/ci-guards.sh /repo/scripts/shellcheck.sh /work/startup.sh
 else
   "${SC[@]}" "$TF/files/mobile-order-deploy.sh" "$ROOT/scripts/ci-guards.sh" "$ROOT/scripts/shellcheck.sh" "$WORK/startup.sh"

@@ -47,7 +47,7 @@ DATA_MOUNT="$ROOT/mnt/data"
 SERVICE="mobile-order"
 BASE_URL="http://127.0.0.1"
 SMOKE_TIMEOUT=60      # 切り替え後のスモークテストの上限(秒。NFR5.5)
-ROLLBACK_TIMEOUT=120  # ロールバック開始からの、スモークテストの試行を始める期限(秒。NFR3.3)
+ROLLBACK_TIMEOUT=120  # ロールバック開始からのスモークテストの上限(秒。NFR3.3)
 POLL_INTERVAL=2
 FREE_INTERVAL=5       # free -m の記録の間隔(秒。NFR5.3)
 SWAP_MAX_MB=512
@@ -222,14 +222,24 @@ point_current() { # $1: リリースのディレクトリ
 }
 
 # 60 秒などの上限内に、GET /(200)と GET /api/menu(200 と { items } の JSON)が通ること
+# 上限までの残り時間(秒)と 5 秒の小さいほうを出力する。残りが 1 秒未満なら失敗する
+remaining_cap() { # $1: 上限(秒)、$2: 開始時の SECONDS
+  local remaining=$(($1 - (SECONDS - $2)))
+  if [ "$remaining" -lt 1 ]; then return 1; fi
+  if [ "$remaining" -lt 5 ]; then echo "$remaining"; else echo 5; fi
+}
+
 smoke() { # $1: 上限(秒)
-  local limit="$1" start="$SECONDS" code body
+  local limit="$1" start="$SECONDS" code body t
   : > "$SMOKE_LOG"
   while :; do
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$BASE_URL/" 2>>"$SMOKE_LOG" || true)"
+    # 各 curl の --max-time は 5 秒と残り時間の小さいほうにして、試行が上限を超えて延びないようにする
+    t="$(remaining_cap "$limit" "$start")" || { echo "上限(${limit}s)に達しました" >> "$SMOKE_LOG"; return 1; }
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time "$t" "$BASE_URL/" 2>>"$SMOKE_LOG" || true)"
     echo "GET / -> ${code:-?}" >> "$SMOKE_LOG"
     if [ "$code" = "200" ]; then
-      code="$(curl -s -o "$WORK/menu.json" -w '%{http_code}' --max-time 5 "$BASE_URL/api/menu" 2>>"$SMOKE_LOG" || true)"
+      t="$(remaining_cap "$limit" "$start")" || { echo "上限(${limit}s)に達しました" >> "$SMOKE_LOG"; return 1; }
+      code="$(curl -s -o "$WORK/menu.json" -w '%{http_code}' --max-time "$t" "$BASE_URL/api/menu" 2>>"$SMOKE_LOG" || true)"
       echo "GET /api/menu -> ${code:-?}" >> "$SMOKE_LOG"
       if [ "$code" = "200" ]; then
         body="$(cat "$WORK/menu.json" 2>/dev/null || true)"
@@ -315,14 +325,13 @@ rb_ok=1
 point_current "$PREV" || rb_ok=0
 if [ "$rb_ok" -eq 1 ]; then systemctl restart "$SERVICE" || rb_ok=0; fi
 if [ "$rb_ok" -eq 1 ]; then
-  # ロールバックの開始から ROLLBACK_TIMEOUT 秒までは、スモークテストを繰り返す
-  smoke "$ROLLBACK_TIMEOUT" || rb_ok=0
+  # ロールバックの開始から ROLLBACK_TIMEOUT 秒以内に合格すること
+  # 再起動にかかった時間を引いた残りを、スモークテストの上限にする(下の合格条件と食い違わないように)
+  smoke $((ROLLBACK_TIMEOUT - (SECONDS - RB_START))) || rb_ok=0
 fi
 RB_ELAPSED=$((SECONDS - RB_START))
-# 上限(ROLLBACK_TIMEOUT)は、スモークテストが新しい試行を始める期限。試行が合格したなら、所要時間が上限を超えても成功とする
-if [ "$rb_ok" -eq 1 ] && [ "$RB_ELAPSED" -gt "$ROLLBACK_TIMEOUT" ]; then
-  log "注意: ロールバックの所要時間(${RB_ELAPSED}s)が上限(${ROLLBACK_TIMEOUT}s)を超えましたが、スモークテストは合格しました"
-fi
+# 合格条件: ロールバックの開始から ROLLBACK_TIMEOUT 秒以内に、スモークテストが合格すること(NFR3.3)
+if [ "$rb_ok" -eq 1 ] && [ "$RB_ELAPSED" -gt "$ROLLBACK_TIMEOUT" ]; then rb_ok=0; fi
 
 if [ "$rb_ok" -ne 1 ]; then
   echo "[deploy] ロールバックにも失敗しました(${RB_ELAPSED}s)。手動の復旧手順で戻してください" >&2

@@ -34,7 +34,7 @@ done < <(git ls-files | grep -E '\.tfvars(\.json)?$' || true)
 
 # G8: "type": "service_account" を含む追跡済みの *.json(サービスアカウントキーの混入)
 while IFS= read -r f; do
-  [ -n "$f" ] && [ -f "$f" ] || continue
+  if [ -z "$f" ] || [ ! -f "$f" ]; then continue; fi
   if grep -qE '"type"[[:space:]]*:[[:space:]]*"service_account"' "$f"; then
     fail "G8: サービスアカウントキーに見えるファイルが追跡されています: $f"
   fi

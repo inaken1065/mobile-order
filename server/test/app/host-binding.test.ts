@@ -98,8 +98,23 @@ test('このマシンにないアドレスを HOST に指定すると起動に�
   }
 });
 
-test('resolveHost: 未指定と空文字は 0.0.0.0、指定があればその値になる', () => {
+test('resolveHost: 未指定は 0.0.0.0、指定があればその値、空文字や空白だけはエラー', () => {
   assert.equal(resolveHost(undefined), '0.0.0.0');
-  assert.equal(resolveHost(''), '0.0.0.0');
   assert.equal(resolveHost('127.0.0.1'), '127.0.0.1');
+  assert.throws(() => resolveHost(''), /HOST が空/);
+  assert.throws(() => resolveHost('  '), /HOST が空/);
+});
+
+test('HOST が空文字のときは、起動時にエラーを出して止まる', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'host-bind-'));
+  const port = await freePort();
+  const { child, output } = startServer({ HOST: '', PORT: String(port) }, dir);
+  try {
+    const code = await new Promise<number | null>((resolve) => child.once('exit', (c) => resolve(c)));
+    assert.notEqual(code, 0);
+    assert.match(output(), /HOST が空/);
+  } finally {
+    await stop(child);
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

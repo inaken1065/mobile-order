@@ -46,8 +46,17 @@ jobs:
       - run: npm run build:web
       # PR の段階でサーバーのバンドル(esbuild)の失敗に気づく。deploy.yml と同じコマンド
       - run: npm run build:server
-      # deploy.sh、ci-guards.sh、起動スクリプト(描画後)の静的解析。shellcheck は ubuntu-24.04 のランナーに入っている
-      - run: bash scripts/shellcheck.sh
+      # deploy.sh、ci-guards.sh、起動スクリプト(描画後)の静的解析。
+      # shellcheck は版を固定し、固定した SHA-256 で照合してから使う(scripts/shellcheck.sh も同じ版を要求する)
+      - name: shellcheck
+        run: |
+          set -euo pipefail
+          VERSION=0.11.0
+          SHA256=8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/shellcheck.tar.xz" "https://github.com/koalaman/shellcheck/releases/download/v${VERSION}/shellcheck-v${VERSION}.linux.x86_64.tar.xz"
+          echo "${SHA256}  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
+          SHELLCHECK="$RUNNER_TEMP/shellcheck-v${VERSION}/shellcheck" bash scripts/shellcheck.sh
 
   secrets:
     runs-on: ubuntu-24.04

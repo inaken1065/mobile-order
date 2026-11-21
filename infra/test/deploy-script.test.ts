@@ -76,17 +76,22 @@ EOF`,
   // current が指す版の server.mjs に BAD があれば 500、なければ 200 を返す
   script(
     join(stubs, 'curl'),
-    `out=""; url=""
+    `out=""; url=""; mt=5
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift 2;;
-    -w|--max-time) shift 2;;
+    -w) shift 2;;
+    --max-time) mt="$2"; shift 2;;
     http*) url="$1"; shift;;
     *) shift;;
   esac
 done
 cur="${root}/opt/mobile-order/current"
-if [ -e "${root}/slow-curl" ]; then sleep 1.5; fi
+echo "max-time=$mt" >> "${root}/curl.log"
+if [ -e "${root}/slow-curl" ]; then
+  if [ "$mt" -lt 2 ]; then sleep "$mt"; printf '000'; exit 0; fi
+  sleep 2
+fi
 code=200
 if [ ! -e "$cur/server.mjs" ] || grep -q BAD "$cur/server.mjs"; then code=500; fi
 body='<html></html>'
@@ -366,17 +371,22 @@ test('スモークテストが不合格なら直前の版へロールバック�
   assert.equal(calls(env).split('\n').filter((l) => l === 'restart mobile-order').length, 3, 'A、B、A への戻しで 3 回');
 });
 
-test('ロールバックのスモークテストが上限を超えてから合格しても、成功(終了コード 10)として扱う', { skip }, () => {
+test('ロールバックのスモークテストが上限(秒)内に合格しなければ、curl の --max-time を残り時間に絞って打ち切り、終了コード 11 にする', { skip }, () => {
   const env = makeEnv();
   putArtifact(env, A);
   assert.equal(run(env, [A]).status, 0);
   putArtifact(env, B, { bad: true });
-  writeFileSync(join(env.root, 'slow-curl'), ''); // 各 curl が 1.5 秒かかる: 2 回で 3 秒 > 上限 1 秒
-  const r = run(env, [B], { MO_ROLLBACK_TIMEOUT: '1' });
-  assert.equal(r.status, 10, r.stderr + r.stdout);
-  assert.equal(current(env), release(env, A));
-  assert.match(r.stdout, /ロールバックに成功/);
-  assert.match(r.stdout, /上限.*を超えましたが/);
+  writeFileSync(join(env.root, 'slow-curl'), ''); // 各 curl が 2 秒かかる(--max-time が 2 未満ならタイムアウト)
+  rmSync(join(env.root, 'curl.log'), { force: true });
+  const r = run(env, [B], { MO_SMOKE_TIMEOUT: '5', MO_ROLLBACK_TIMEOUT: '3' });
+  assert.equal(r.status, 11, r.stderr + r.stdout);
+  assert.match(r.stderr, /ロールバックにも失敗/);
+  const limits = readFileSync(join(env.root, 'curl.log'), 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => Number(l.replace('max-time=', '')));
+  assert.ok(limits.length > 0 && limits.every((n) => n <= 5), `--max-time は 5 以下: ${limits}`);
+  assert.ok(limits.some((n) => n < 5), '残り時間に合わせて --max-time が 5 より小さくなる');
 });
 
 test('ロールバックのスモークテストも不合格なら、終了コード 11 で手動の復旧を促す', { skip }, () => {
